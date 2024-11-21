@@ -1,0 +1,21 @@
+description: >
+  Checkout a git repository with FIPS-compliant SSH keys.
+usage:
+  version: 2.1
+  orbs:
+    corecci: juburr/corecci@0.0.1
+  jobs:
+    ubi9_fips_job:
+      docker:
+        - image: registry.access.redhat.com/ubi9/ubi:9.5
+      resource_class: small
+      steps:
+        - corecci/checkout_fips:
+            fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+  workflows:
+    use-my-orb:
+      jobs:
+        - corecci/ubi9_fips_job:
+            filters:
+              tags:
+                only: /.*/

@@ -1,9 +1,7 @@
 version: 2.1
+
 orbs:
-  # Your orb will be automatically injected here during the pipeline.
-  # Reference your orb's jobs and commands below as they will exist when built.
   orb-tools: circleci/orb-tools@12.0
-  # The orb definition is intentionally not included here. It will be injected into the pipeline.
   corecci: {}
 
 # Use this tag to ensure test jobs always run,
@@ -20,22 +18,38 @@ release-filters: &release-filters
     only: /^v[0-9]+\.[0-9]+\.[0-9]+$/
 
 jobs:
-  # Create jobs to test the commands of your orbs.
-  # You may want to add additional validation steps to ensure the commands are working as expected.
-  command-test:
+  # Ubuntu 22 does not have FIPS mode enabled by default.
+  checkout_fips-ubuntu22-test:
     docker:
       - image: cimg/base:current-22.04
+    resource_class: small
     steps:
-      - checkout
-      # Run your orb's commands to validate them.
-      - corecci/greet
+      - corecci/checkout_fips:
+          fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+
+  # UBI 9 and Rocky 9 should have FIPS mode enabled by default.
+  # FIPS won't be enabled on the public circleci.com though, so this only
+  # tests that the checkout works as expected without FIPS mode enabled.
+  checkout_fips-rocky9-test:
+    docker:
+      - image: docker.io/rockylinux:9.3
+    resource_class: small
+    steps:
+      - run:
+          name: Install Required Dependencies
+          command: dnf install openssh-clients git -y
+      - corecci/checkout_fips:
+          fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+
 workflows:
   test-deploy:
     jobs:
-      # Make sure to include "filters: *filters" in every test job you want to run as part of your deployment.
-      # Test your orb's commands in a custom job and test your orb's jobs directly as a part of this workflow.
-      - command-test:
+      # Test cases for the orb
+      - checkout_fips-ubuntu22-test:
           filters: *filters
+      - checkout_fips-rocky9-test:
+          filters: *filters
+
       # The orb must be re-packed for publishing, and saved to the workspace.
       - orb-tools/pack:
           filters: *release-filters
@@ -46,6 +60,7 @@ workflows:
           # Ensure this job requires all test jobs and the pack job.
           requires:
             - orb-tools/pack
-            - command-test
+            - checkout_fips-ubuntu22-test
+            - checkout_fips-rocky9-test
           context: orb-publishing
           filters: *release-filters
