@@ -20,7 +20,9 @@ if ! command -v circleci &> /dev/null; then
 fi
 
 # Check that required parameters were supplied
-REQUIRED_PARAMS=("PARAM_FINGERPRINT")
+# This means that the variables must be non-empty from the perspective of *this* script.
+# They can still be optional orb parameters if default values are provided.
+REQUIRED_PARAMS=("PARAM_DEPTH" "PARAM_FINGERPRINT")
 for PARAM in "${REQUIRED_PARAMS[@]}"; do
     if [[ -z "${!PARAM}" ]]; then
         echo "ERROR: Param '$PARAM' is required but not set."
@@ -30,23 +32,53 @@ done
 
 # Read in the orb parameters
 if command -v circleci &> /dev/null; then
-    SSH_KEY_FINGERPRINT=$(circleci env subst "$PARAM_FINGERPRINT")
+    DEPTH=$(circleci env subst "$PARAM_DEPTH")
     SSH_CIPHERS=$(circleci env subst "$PARAM_SSH_CIPHERS")
     SSH_FINGERPRINT_HASH=$(circleci env subst "$PARAM_SSH_FINGERPRINT_HASH")
     SSH_HOST_KEY_ALGORITHMS=$(circleci env subst "$PARAM_SSH_HOST_KEY_ALGORITHMS")
     SSH_KEX_ALGORITHMS=$(circleci env subst "$PARAM_SSH_KEX_ALGORITHMS")
+    SSH_KEY_FINGERPRINT=$(circleci env subst "$PARAM_FINGERPRINT")
 else
-    SSH_KEY_FINGERPRINT="$PARAM_FINGERPRINT"
+    DEPTH="$PARAM_DEPTH"
     SSH_CIPHERS="$PARAM_SSH_CIPHERS"
     SSH_FINGERPRINT_HASH="$PARAM_SSH_FINGERPRINT_HASH"
     SSH_HOST_KEY_ALGORITHMS="$PARAM_SSH_HOST_KEY_ALGORITHMS"
     SSH_KEX_ALGORITHMS="$PARAM_SSH_KEX_ALGORITHMS"
+    SSH_KEY_FINGERPRINT="$PARAM_FINGERPRINT"
 fi
+
+# Print orb parameters for debugging purposes
+echo "The following parameters are being used:"
+echo "  CIRCLE_BRANCH: ${CIRCLE_BRANCH:-}"
+echo "  CIRCLE_REPOSITORY_URL: ${CIRCLE_REPOSITORY_URL:-}"
+echo "  CIRCLE_SHA1: ${CIRCLE_SHA1:-}"
+echo "  CIRCLE_TAG: ${CIRCLE_TAG:-}"
+echo "  DEPTH: ${DEPTH:-}"
+echo "  SSH_CIPHERS: ${SSH_CIPHERS:-}"
+echo "  SSH_FINGERPRINT_HASH: ${SSH_FINGERPRINT_HASH:-}"
+echo "  SSH_HOST_KEY_ALGORITHMS: ${SSH_HOST_KEY_ALGORITHMS:-}"
+echo "  SSH_KEX_ALGORITHMS: ${SSH_KEX_ALGORITHMS:-}"
+echo "  SSH_KEY_FINGERPRINT: ${SSH_KEY_FINGERPRINT:-}"
 
 # Extract the GitHub domain name from the CIRCLE_REPOSITORY_URL.
 # Input format: git@<GH_HOST>:<ORG>/<REPO>
 # Extracted format: <GH_HOST>
 GH_HOST=$(echo "$CIRCLE_REPOSITORY_URL" | cut -d':' -f1 | cut -d'@' -f2)
+echo "Computed GH_HOST: ${GH_HOST}"
+
+# Compute checkout reference.
+# In theory CIRLCE_SHA1 should always be set, but extra checks are added for safety.
+if [[ -n "${CIRCLE_SHA1:-}" ]]; then
+    CHECKOUT_REF="${CIRCLE_SHA1}"
+elif [[ -n "${CIRCLE_TAG:-}" ]]; then
+    CHECKOUT_REF="${CIRCLE_TAG}"
+elif [[ -n "${CIRCLE_BRANCH:-}" ]]; then
+    CHECKOUT_REF="${CIRCLE_BRANCH}"
+else
+    echo "FATAL: Unable to determine the checkout reference."
+    exit 1
+fi
+echo "Computed CHECKOUT_REF: ${CHECKOUT_REF}"
 
 # Locate the SSH key file based on the provided fingerprint
 # CircleCI always prefixes "id_rsa" in the file name, even if the key is not RSA based
@@ -71,26 +103,13 @@ else
     SSH_KEY_FINGERPRINT_FLAT=$(echo "$SSH_KEY_FINGERPRINT" | tr -d ':')
     SSH_KEY_FILE="$HOME/.ssh/id_rsa_$SSH_KEY_FINGERPRINT_FLAT"
 fi
+echo "Computed SSH_KEY_FINGERPRINT_FLAT: ${SSH_KEY_FINGERPRINT_FLAT}"
+echo "Computed SSH_KEY_FILE: ${SSH_KEY_FILE}"
 
 if [[ -z "$SSH_KEY_FILE" ]]; then
   echo "Unable to locate the SSH key file based on the provided fingerprint."
   exit 1
 fi
-
-# Print orb parameters for debugging purposes
-echo "The following parameters are being used:"
-echo "  CIRCLE_BRANCH: ${CIRCLE_BRANCH:-}"
-echo "  CIRCLE_REPOSITORY_URL: ${CIRCLE_REPOSITORY_URL:-}"
-echo "  CIRCLE_SHA1: ${CIRCLE_SHA1:-}"
-echo "  CIRCLE_TAG: ${CIRCLE_TAG:-}"
-echo "  GH_HOST: $GH_HOST"
-echo "  SSH_CIPHERS: $SSH_CIPHERS"
-echo "  SSH_FINGERPRINT_HASH: $SSH_FINGERPRINT_HASH"
-echo "  SSH_HOST_KEY_ALGORITHMS: $SSH_HOST_KEY_ALGORITHMS"
-echo "  SSH_KEX_ALGORITHMS: $SSH_KEX_ALGORITHMS"
-echo "  SSH_KEY_FINGERPRINT: $SSH_KEY_FINGERPRINT"
-echo "  SSH_KEY_FINGERPRINT_FLAT: $SSH_KEY_FINGERPRINT_FLAT"
-echo "  SSH_KEY_FILE: $SSH_KEY_FILE"
 
 # Use ssh-keyscan to get the known host entry.
 if command -v ssh-keyscan &> /dev/null; then
@@ -140,40 +159,63 @@ if [[ -z "$SSH_KNOWN_HOST_ENTRY" ]]; then
     exit 1
 fi
 
-# Checkout the git respository using the provided SSH key and secure, FIPS-approved SSH settings
+# Clone the git respository using the provided SSH key and secure, FIPS-approved SSH settings
 echo "Running git clone using ssh..."
 export GIT_SSH_COMMAND="ssh -o IdentitiesOnly=yes -o KexAlgorithms=${SSH_KEX_ALGORITHMS} -o HostKeyAlgorithms=${SSH_HOST_KEY_ALGORITHMS} -o Ciphers=${SSH_CIPHERS} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${HOME}/.ssh/known_hosts -o IdentityAgent=none -o IdentityFile=${SSH_KEY_FILE} -o FingerprintHash=${SSH_FINGERPRINT_HASH} -o ForwardAgent=no -o ForwardX11=no"
-if ! git clone "$CIRCLE_REPOSITORY_URL" .; then
-    echo "FATAL: git clone failed."
+
+echo "Cloning the repository with depth: ${DEPTH}..."
+if [[ "${DEPTH}" == "full" ]]; then
+    echo "Cloning repository '${CIRCLE_REPOSITORY_URL}'..."
+    if ! git clone "$CIRCLE_REPOSITORY_URL" .; then
+        echo "FATAL: git clone failed."
+        exit 1
+    fi
+    echo "Checking out reference '${CHECKOUT_REF}'..."
+    if ! git checkout "${CHECKOUT_REF}"; then
+        echo "ERROR: git checkout failed."
+    fi
+elif [[ "${DEPTH}" == "shallow" ]]; then
+    echo "Initializing git repository..."
+    if ! git init .; then
+        echo "FATAL: git init failed."
+        exit 1
+    fi
+
+    echo "Adding remote origin '${CIRCLE_REPOSITORY_URL}'..."
+    if ! git remote add origin "${CIRCLE_REPOSITORY_URL}"; then
+        echo "FATAL: git remote add failed."
+        exit 1
+    fi
+
+    echo "Fetching reference '${CHECKOUT_REF}' with depth 1..."
+    if ! git fetch --depth 1 origin "${CHECKOUT_REF}"; then
+        echo "FATAL: git fetch failed."
+        exit 1
+    fi
+
+    echo "Checking out source code for '${CHECKOUT_REF}'..."
+    if ! git checkout FETCH_HEAD; then
+        echo "FATAL: git checkout failed."
+        exit 1
+    fi
+elif [[ "${DEPTH}" == "empty" ]]; then
+    echo "CLoning git repository without source code..."
+    if ! git clone --no-checkout "$CIRCLE_REPOSITORY_URL"; then
+        echo "FATAL: git clone failed."
+        exit 1
+    fi
+else
+    echo "FATAL: Unknown depth parameter value: ${DEPTH}"
     exit 1
-fi
-
-# Ensure that we checkout the correct branch, tag, or commit required for this CircleCI job
-echo "Checking out commit '${CIRCLE_SHA1:-}' for this job..."
-if ! git checkout "${CIRCLE_SHA1:-}"; then
-    echo "ERROR: git checkout failed. CIRCLE_SHA1 might not be set."
-
-    # Attempt to checkout the associated branch if CIRCLE_SHA1 is not set
-    echo "Checking out the branch '${CIRCLE_BRANCH:-}' for this job..."
-    if ! git checkout "${CIRCLE_BRANCH:-}"; then
-        echo "ERROR: git checkout failed. CIRCLE_BRANCH might not be set."
-        exit 1
-    fi
-
-    # Attempt to checkout the associated tag if CIRCLE_BRANCH is not set
-    echo "Checking out the tag '${CIRCLE_TAG:-}' for this job..."
-    if ! git checkout "${CIRCLE_TAG:-}"; then
-        echo "ERROR: git checkout failed. CIRCLE_TAG might not be set."
-        exit 1
-    fi
 fi
 echo "FIPS-compliant code checkout completed."
 
 # Cleanup
 echo "Cleaning up input parameters..."
-unset PARAM_SSH_KEY_FINGERPRINT
+unset PARAM_DEPTH
 unset PARAM_SSH_CIPHERS
 unset PARAM_SSH_FINGERPRINT_HASH
 unset PARAM_SSH_HOST_KEY_ALGORITHMS
 unset PARAM_SSH_KEX_ALGORITHMS
+unset PARAM_SSH_KEY_FINGERPRINT
 echo "  Done."
