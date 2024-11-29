@@ -12,7 +12,8 @@ parameters:
        - Empty clones fetch no code at all, which is useful for fetching metadata through git commands.
   fingerprint:
     type: string
-    description: "(required) MD5 fingerprint of the ECDSA-based custom SSH key found in the CircleCI project settings."
+    default: ""
+    description: "(optional) MD5 fingerprint of the ECDSA-based custom SSH key found in the CircleCI project settings."
   ssh_ciphers:
     type: string
     default: "aes256-ctr"
@@ -30,9 +31,12 @@ parameters:
     default: "ecdh-sha2-nistp384,ecdh-sha2-nistp256"
     description: "(optional) Comma-separated list of SSH key exchange algorithms to use for the connection."
 steps:
-  - add_ssh_keys:
-      fingerprints:
-        - << parameters.fingerprint >>
+  - when:
+      condition: << parameters.fingerprint >>
+      steps:
+        - add_ssh_keys:
+            fingerprints:
+              - << parameters.fingerprint >>
   - run:
       name: FIPS Checkout
       environment:
