@@ -1,6 +1,15 @@
 description: >
-  Checkout a git repository with FIPS-compliant SSH keys.
+  Checkout a git repository with options such as FIPS-compliant SSH keys and shallow checkouts.
 parameters:
+  depth:
+    type: enum
+    default: "full"
+    enum: ["full", "shallow", "empty"]
+    description: >
+      (optional) Checkout depth to use.
+       - Full clones fetch all history for the repository, and is the default behavior in CircleCI.
+       - Shallow clones only fetch code for the latest commit, but are incredibly fast.
+       - Empty clones fetch no code at all, which is useful for fetching metadata through git commands.
   fingerprint:
     type: string
     description: "(required) MD5 fingerprint of the ECDSA-based custom SSH key found in the CircleCI project settings."
@@ -27,6 +36,7 @@ steps:
   - run:
       name: FIPS Checkout
       environment:
+        PARAM_DEPTH: << parameters.depth >>
         PARAM_FINGERPRINT: << parameters.fingerprint >>
         PARAM_SSH_CIPHERS: << parameters.ssh_ciphers >>
         PARAM_SSH_FINGERPRINT_HASH: << parameters.ssh_fingerprint_hash >>

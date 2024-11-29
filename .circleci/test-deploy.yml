@@ -26,10 +26,60 @@ jobs:
     steps:
       - corecci/checkout_fips:
           fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+      - run:
+          name: Verify Full Checkout
+          shell: /bin/bash
+          command: |
+            if [ $(git log --oneline | wc -l) -lte 1 ]; then
+              echo "Full checkout failed. Expected more than one commit."
+              exit 1
+            fi
+
+  # Test shallow checkout.
+  checkout_fips_shallow-ubuntu22-test:
+    docker:
+      - image: cimg/base:current-22.04
+    resource_class: small
+    steps:
+      - corecci/checkout_fips:
+          depth: shallow
+          fingerprint: SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc
+      - run:
+          name: Verify Shallow Checkout
+          shell: /bin/bash
+          command: |
+            if [ $(git log --oneline | wc -l) -ne 1 ]; then
+              echo "Shallow checkout failed. Expected only one commit."
+              exit 1
+            fi
+            if [ $(git branch --all | wc -l) -ne 1 ]; then
+              echo "Shallow checkout failed. Expected only one branch."
+              exit 1
+            fi
+
+  # Test empty checkout.
+  checkout_fips_empty-ubuntu22-test:
+    docker:
+      - image: cimg/base:current-22.04
+    resource_class: small
+    steps:
+      - corecci/checkout_fips:
+          depth: empty
+          fingerprint: SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc
+      - run:
+          name: Verify Empty Checkout
+          shell: /bin/bash
+          command: |
+            # Only the .git directory should be present in an empty checkout.
+            if [ $(ls -A | wc -l) -ne 1 ]; then
+              echo "Empty checkout failed. Expected only one file or directory."
+              exit 1
+            fi
 
   # UBI 9 and Rocky 9 should have FIPS mode enabled by default.
-  # FIPS won't be enabled on the public circleci.com though, so this only
-  # tests that the checkout works as expected without FIPS mode enabled.
+  # FIPS isn't enabled on the underlying hosts at circleci.com though, so
+  # this isn't a true test of FIPS mode unfortunately. Just ensure the
+  # orb works on these distros.
   checkout_fips-rocky9-test:
     docker:
       - image: docker.io/rockylinux:9.3
@@ -37,7 +87,9 @@ jobs:
     steps:
       - run:
           name: Install Required Dependencies
-          command: dnf install openssh-clients git -y
+          command: |
+            # EL9 doesn't ship with git or an ssh client by default.
+            dnf install openssh-clients git -y
       - corecci/checkout_fips:
           fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
 
@@ -46,6 +98,10 @@ workflows:
     jobs:
       # Test cases for the orb
       - checkout_fips-ubuntu22-test:
+          filters: *filters
+      - checkout_fips_shallow-ubuntu22-test:
+          filters: *filters
+      - checkout_fips_empty-ubuntu22-test:
           filters: *filters
       - checkout_fips-rocky9-test:
           filters: *filters
@@ -61,6 +117,8 @@ workflows:
           requires:
             - orb-tools/pack
             - checkout_fips-ubuntu22-test
+            - checkout_fips_shallow-ubuntu22-test
+            - checkout_fips_empty-ubuntu22-test
             - checkout_fips-rocky9-test
           context: orb-publishing
           filters: *release-filters
