@@ -42,7 +42,7 @@ The app will display the fingerprint of the key you just added. Place this finge
         - image: registry.access.redhat.com/ubi9/ubi:9.5
       resource_class: small
       steps:
-        - corecci/checkout_fips:
+        - corecci/checkout:
             fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
 
   workflows:
