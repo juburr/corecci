@@ -22,7 +22,7 @@ fi
 # Check that required parameters were supplied
 # This means that the variables must be non-empty from the perspective of *this* script.
 # They can still be optional orb parameters if default values are provided.
-REQUIRED_PARAMS=("PARAM_DEPTH" "PARAM_FINGERPRINT")
+REQUIRED_PARAMS=("PARAM_DEPTH")
 for PARAM in "${REQUIRED_PARAMS[@]}"; do
     if [[ -z "${!PARAM}" ]]; then
         echo "ERROR: Param '$PARAM' is required but not set."
@@ -80,35 +80,49 @@ else
 fi
 echo "Computed CHECKOUT_REF: ${CHECKOUT_REF}"
 
-# Locate the SSH key file based on the provided fingerprint
-# CircleCI always prefixes "id_rsa" in the file name, even if the key is not RSA based
-# Input example (MD5 format): "e8:35:14:20:8c:57:a3:68:b3:6e:cc:3d:b8:72:bf:88"
-# Input example (SHA-256 format): "SHA256:NPj4IcXxqQEKGXOghi/QbG2sohoNfvZ30JwCcdSSNM0"
-# Extracted format: ~/.ssh/id_rsa_<fingerprint>
 SSH_KEY_FILE=""
-if [[ "$SSH_KEY_FINGERPRINT" == SHA256:* ]]; then
-    SSH_KEY_FINGERPRINT_FLAT=$(echo "$SSH_KEY_FINGERPRINT" | cut -d ':' -f2)
-    echo "Searching for key file with fingerprint: $SSH_KEY_FINGERPRINT_FLAT"
-    for keyfile in ~/.ssh/id_*; do
-    if [[ -f "$keyfile" && ! "$keyfile" =~ \.pub$ ]]; then
-        FINGERPRINT=$(ssh-keygen -lf "$keyfile" | awk '{print $2}')
-        echo "  File $keyfile has fingerprint: $FINGERPRINT"
-        if [[ "$FINGERPRINT" == "$SSH_KEY_FINGERPRINT" ]]; then
-            echo "  Found keyfile matching supplied fingerprint: $keyfile"
-            SSH_KEY_FILE="$keyfile"
+if [[ -n "$SSH_KEY_FINGERPRINT" ]]; then
+    # When a fingerprint is provided, we need to locate the corresponding SSH key file.
+    # CircleCI always prefixes "id_rsa" in the file name, even if the key is not RSA based
+    # Input example (MD5 format): "e8:35:14:20:8c:57:a3:68:b3:6e:cc:3d:b8:72:bf:88"
+    # Input example (SHA-256 format): "SHA256:NPj4IcXxqQEKGXOghi/QbG2sohoNfvZ30JwCcdSSNM0"
+    # Extracted format: ~/.ssh/id_rsa_<fingerprint>
+    SSH_KEY_FILE=""
+    if [[ "$SSH_KEY_FINGERPRINT" == SHA256:* ]]; then
+        SSH_KEY_FINGERPRINT_FLAT=$(echo "$SSH_KEY_FINGERPRINT" | cut -d ':' -f2)
+        echo "Searching for key file with fingerprint: $SSH_KEY_FINGERPRINT_FLAT"
+        for keyfile in ~/.ssh/id_*; do
+        if [[ -f "$keyfile" && ! "$keyfile" =~ \.pub$ ]]; then
+            FINGERPRINT=$(ssh-keygen -lf "$keyfile" | awk '{print $2}')
+            echo "  File $keyfile has fingerprint: $FINGERPRINT"
+            if [[ "$FINGERPRINT" == "$SSH_KEY_FINGERPRINT" ]]; then
+                echo "  Found keyfile matching supplied fingerprint: $keyfile"
+                SSH_KEY_FILE="$keyfile"
+            fi
+        fi
+        done
+        if [[ -z "$SSH_KEY_FILE" ]]; then
+            echo "FATAL: Failed to locate the SSH key file based on the provided SHA256 fingerprint."
+            exit 1
+        fi
+    else
+        # If the fingerprint doesn't start with "SHA256:", then it must be in the old MD5 format used by CircleCI.
+        # Ref: https://circleci.com/docs/add-ssh-key/#add-ssh-keys-to-a-job
+        SSH_KEY_FINGERPRINT_FLAT=$(echo "$SSH_KEY_FINGERPRINT" | tr -d ':')
+        SSH_KEY_FILE="$HOME/.ssh/id_rsa_$SSH_KEY_FINGERPRINT_FLAT"
+
+        if [[ ! -f "$SSH_KEY_FILE" ]]; then
+            echo "FATAL: Unable to locate the SSH key file based on the provided MD5 fingerprint."
+            exit 1
         fi
     fi
-    done
-else
-    SSH_KEY_FINGERPRINT_FLAT=$(echo "$SSH_KEY_FINGERPRINT" | tr -d ':')
-    SSH_KEY_FILE="$HOME/.ssh/id_rsa_$SSH_KEY_FINGERPRINT_FLAT"
-fi
-echo "Computed SSH_KEY_FINGERPRINT_FLAT: ${SSH_KEY_FINGERPRINT_FLAT}"
-echo "Computed SSH_KEY_FILE: ${SSH_KEY_FILE}"
 
-if [[ -z "$SSH_KEY_FILE" ]]; then
-  echo "Unable to locate the SSH key file based on the provided fingerprint."
-  exit 1
+    if [[ -z "$SSH_KEY_FILE" ]]; then
+        echo "WARN: Unable to locate the SSH key file based on the provided fingerprint."
+    else
+        echo "Computed SSH_KEY_FINGERPRINT_FLAT: ${SSH_KEY_FINGERPRINT_FLAT}"
+        echo "Computed SSH_KEY_FILE: ${SSH_KEY_FILE}"
+    fi
 fi
 
 # Use ssh-keyscan to get the known host entry.
@@ -161,7 +175,21 @@ fi
 
 # Clone the git respository using the provided SSH key and secure, FIPS-approved SSH settings
 echo "Running git clone using ssh..."
-export GIT_SSH_COMMAND="ssh -o IdentitiesOnly=yes -o KexAlgorithms=${SSH_KEX_ALGORITHMS} -o HostKeyAlgorithms=${SSH_HOST_KEY_ALGORITHMS} -o Ciphers=${SSH_CIPHERS} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${HOME}/.ssh/known_hosts -o IdentityAgent=none -o IdentityFile=${SSH_KEY_FILE} -o FingerprintHash=${SSH_FINGERPRINT_HASH} -o ForwardAgent=no -o ForwardX11=no"
+
+# If we have an SSH key file on disk, use it directly and specify IdentitiesOnly=yes with IdentityAgent=none to
+# prevent ssh-agent from being used. This is only on disk if the built-in CircleCI checkout command was used OR
+# if the user provided a fingerprint and we ran the add_ssh_keys command before calling this script. In all other
+# cases, the key is in ssh-agent that we're able to access due to SSH_AUTH_SOCK being set.
+if [[ -n "${SSH_KEY_FILE}" ]]; then
+    export SSH_AUTH_SOCK=""
+    SSH_KEY_ARGS="-o IdentitiesOnly=yes -o IdentityAgent=none -o IdentityFile=${SSH_KEY_FILE}"
+else
+    SSH_KEY_ARGS=""
+fi
+export GIT_SSH_COMMAND="ssh -o KexAlgorithms=${SSH_KEX_ALGORITHMS} -o HostKeyAlgorithms=${SSH_HOST_KEY_ALGORITHMS} -o Ciphers=${SSH_CIPHERS} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${HOME}/.ssh/known_hosts -o FingerprintHash=${SSH_FINGERPRINT_HASH} -o ForwardAgent=no -o ForwardX11=no ${SSH_KEY_ARGS:-}"
+echo "Computed SSH_KEY_ARGS: ${SSH_KEY_ARGS:-}"
+echo "Computed GIT_SSH_COMMAND: ${GIT_SSH_COMMAND:-}"
+echo "export GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-}" >> "$BASH_ENV"
 
 echo "Cloning the repository with depth: ${DEPTH}..."
 if [[ "${DEPTH}" == "full" ]]; then

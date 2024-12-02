@@ -8,11 +8,11 @@
 
 
 ## Features
-- **FIPS-compliant checkout command**  
-The built-in CircleCI checkout command may fail in certain jobs when FIPS mode is enabled. This occurs because CircleCI deploy keys all use ED25519 by default, which is not FIPS compliant. FIPS mode depends heavily on the underlying host configuration, so this issue primarily affects self-hosted CircleCI servers, particularly in environments maintained to comply with NIST SP 800-171 or DoD CMMC requirements. When using newer container images such as rocky:9 or ubi:9 in these FIPS-enabled environments, the checkout command fails. This does not appear to be an issue on the public cloud version at app.circleci.com. This orb therefore provides a custom checkout command that allows you to use custom ECDSA keys until this issue is resolved by CircleCI.
+- **FIPS- and CNSA-compliant checkout command**
+The built-in CircleCI checkout command fails in certain jobs when FIPS mode is enabled. This issue primarily affects self-hosted CircleCI servers, particularly in environments maintained to comply with NIST SP 800-171 or DoD CMMC requirements. When using newer container images such as rocky:9 or ubi:9 in these FIPS-enabled environments, the checkout command fails. This does not appear to be an issue on the public cloud version at app.circleci.com, as FIPS mode depends heavily on the underlying host configurations. This orb therefore provides a custom checkout command that allows you to use custom ECDSA keys until this issue is resolved by CircleCI. Every effort was made to make this custom checkout command compliant with NSA's Commercial National Security Algorithm Suite (CNSA) 2.0.
 
 - **Shallow checkout command**  
-Many organizations have enormous git respositories that have built up over the course of more than a decade, to include monorepos that host multiple services or applications. The checkout command for these repositories can often take a ridiculous amount of time. This orb provides a shallow checkout command to pull source code for the current head commit only, with a depth of 1. This allows for extremely fast checkouts when using massive repositories as compared to the built-in checkout command. Development of this feature is still in progress.
+Many organizations have enormous git respositories that have built up over the course of more than a decade, to include monorepos that host multiple services or applications. The checkout command for these repositories can often take a ridiculous amount of time. This orb provides a shallow checkout command to pull source code for the current head commit only, with a depth of 1. This allows for extremely fast checkouts when using massive repositories as compared to the built-in checkout command.
 
 - **Persist to S3 command**  
 After many years of working with CircleCI, I also observed that the `persist_to_workspace` command could also suck up tons of time, especially to tar and un-tar files. Many companies also persist certain release artifacts to an S3 storage for long-term storage. This orb therefore offers a `persist_to_s3` command as a convenience command. Development of this feature is still in progress.
@@ -42,7 +42,7 @@ The app will display the fingerprint of the key you just added. Place this finge
         - image: registry.access.redhat.com/ubi9/ubi:9.5
       resource_class: small
       steps:
-        - corecci/checkout_fips:
+        - corecci/checkout:
             fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
 
   workflows:

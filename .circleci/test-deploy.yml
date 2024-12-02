@@ -18,19 +18,35 @@ release-filters: &release-filters
     only: /^v[0-9]+\.[0-9]+\.[0-9]+$/
 
 jobs:
+  # Use the default deploy key by not specifying a fingerprint.
+  checkout_deploy_key-ubuntu22-test:
+    docker:
+      - image: cimg/base:current-22.04
+    resource_class: small
+    steps:
+      - corecci/checkout
+      - run:
+          name: Verify Full Checkout
+          shell: /bin/bash
+          command: |
+            if [ $(git log --oneline | wc -l) -le 1 ]; then
+              echo "Full checkout failed. Expected more than one commit."
+              exit 1
+            fi
+
   # Ubuntu 22 does not have FIPS mode enabled by default.
   checkout_fips-ubuntu22-test:
     docker:
       - image: cimg/base:current-22.04
     resource_class: small
     steps:
-      - corecci/checkout_fips:
+      - corecci/checkout:
           fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
       - run:
           name: Verify Full Checkout
           shell: /bin/bash
           command: |
-            if [ $(git log --oneline | wc -l) -lte 1 ]; then
+            if [ $(git log --oneline | wc -l) -le 1 ]; then
               echo "Full checkout failed. Expected more than one commit."
               exit 1
             fi
@@ -41,7 +57,7 @@ jobs:
       - image: cimg/base:current-22.04
     resource_class: small
     steps:
-      - corecci/checkout_fips:
+      - corecci/checkout:
           depth: shallow
           fingerprint: SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc
       - run:
@@ -63,7 +79,7 @@ jobs:
       - image: cimg/base:current-22.04
     resource_class: small
     steps:
-      - corecci/checkout_fips:
+      - corecci/checkout:
           depth: empty
           fingerprint: SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc
       - run:
@@ -90,13 +106,15 @@ jobs:
           command: |
             # EL9 doesn't ship with git or an ssh client by default.
             dnf install openssh-clients git -y
-      - corecci/checkout_fips:
+      - corecci/checkout:
           fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
 
 workflows:
   test-deploy:
     jobs:
       # Test cases for the orb
+      - checkout_deploy_key-ubuntu22-test:
+          filters: *filters
       - checkout_fips-ubuntu22-test:
           filters: *filters
       - checkout_fips_shallow-ubuntu22-test:
@@ -116,6 +134,7 @@ workflows:
           # Ensure this job requires all test jobs and the pack job.
           requires:
             - orb-tools/pack
+            - checkout_deploy_key-ubuntu22-test
             - checkout_fips-ubuntu22-test
             - checkout_fips_shallow-ubuntu22-test
             - checkout_fips_empty-ubuntu22-test
