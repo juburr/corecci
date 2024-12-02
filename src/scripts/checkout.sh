@@ -182,9 +182,9 @@ echo "Running git clone using ssh..."
 # cases, the key is in ssh-agent that we're able to access due to SSH_AUTH_SOCK being set.
 if [[ -n "${SSH_KEY_FILE}" ]]; then
     export SSH_AUTH_SOCK=""
-    export SSH_KEY_ARGS="-o IdentitiesOnly=yes -o IdentityAgent=none -o IdentityFile=${SSH_KEY_FILE}"
+    SSH_KEY_ARGS="-o IdentitiesOnly=yes -o IdentityAgent=none -o IdentityFile=${SSH_KEY_FILE}"
 else
-    export SSH_KEY_ARGS=""
+    SSH_KEY_ARGS=""
 fi
 export GIT_SSH_COMMAND="ssh -o KexAlgorithms=${SSH_KEX_ALGORITHMS} -o HostKeyAlgorithms=${SSH_HOST_KEY_ALGORITHMS} -o Ciphers=${SSH_CIPHERS} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${HOME}/.ssh/known_hosts -o FingerprintHash=${SSH_FINGERPRINT_HASH} -o ForwardAgent=no -o ForwardX11=no ${SSH_KEY_ARGS:-}"
 echo "Computed SSH_KEY_ARGS: ${SSH_KEY_ARGS:-}"
