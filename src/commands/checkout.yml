@@ -1,0 +1,65 @@
+description: >
+  Checkout a git repository with options such as FIPS-compliant SSH keys and shallow checkouts,
+  adhering as closely as possible to the NSA's Commercial National Security Algorithm Suite (CNSA) 2.0.
+parameters:
+  depth:
+    type: enum
+    default: "full"
+    enum: ["full", "shallow", "empty"]
+    description: >
+      (optional) Checkout depth to use.
+       - Full clones fetch all history for the repository, and is the default behavior in CircleCI.
+       - Shallow clones only fetch code for the latest commit, but are incredibly fast.
+       - Empty clones fetch no code at all, which is useful for fetching metadata through git commands.
+  fingerprint:
+    type: string
+    default: ""
+    description: >
+      (optional) MD5 fingerprint of the ECDSA-based custom SSH key found in the CircleCI project settings.
+        - Required if you want to use this orb in a FIPS-compliant environment.
+        - Leaving this parameter empty will use the default deploy key in your project, which uses ED25519.
+  ssh_ciphers:
+    type: string
+    default: "aes256-gcm@openssh.com"
+    description: >
+      (optional) Comma-separated list of SSH ciphers to use for the connection.
+        - Per NSA CNSA 2.0, the "aes256-gcm@openssh.com" encryption algorithm MUST be used.
+  ssh_fingerprint_hash:
+    type: string
+    default: "sha384,sha512"
+    description: >
+      (optional) Hash algorithm to use for the SSH fingerprint.
+        - Per NSA CNSA 2.0, SHA-384 SHOULD be used and SHA-512 MAY be used.
+  ssh_host_key_algorithms:
+    type: string
+    default: "ecdsa-sha2-nistp384,ecdsa-sha2-nistp256,rsa-sha2-512"
+    description: >
+      (optional) Comma-separated list of SSH host key algorithms to use for the connection.
+        - Per NSA CNSA 2.0, the ecdsa-sha2-nistp384 or rsa-sha2-512 algorithms MUST be used.
+        - I temporarily added ecdh-sha2-nistp256 to support orb use with GitHub. While
+          rsa-sha2-512 works AND is compliant, it throws a warning that the remote host identification
+          has changed. GitHub offers: ssh-ed25519,ecdsa-sha2-nistp256,rsa-sha2-512,rsa-sha2-256,ssh-rsa.
+          The key it returns is not listed on GitHub's "SSH key fingerprints" webpage.
+  ssh_kex_algorithms:
+    type: string
+    default: "ecdh-sha2-nistp384"
+    description: >
+      (optional) Comma-separated list of SSH key exchange algorithms to use for the connection.
+        - Per NSA CNSA 2.0, the ecdh-sha2-nistp384 algorithm MUST be used.
+steps:
+  - when:
+      condition: << parameters.fingerprint >>
+      steps:
+        - add_ssh_keys:
+            fingerprints:
+              - << parameters.fingerprint >>
+  - run:
+      name: FIPS Checkout
+      environment:
+        PARAM_DEPTH: << parameters.depth >>
+        PARAM_FINGERPRINT: << parameters.fingerprint >>
+        PARAM_SSH_CIPHERS: << parameters.ssh_ciphers >>
+        PARAM_SSH_FINGERPRINT_HASH: << parameters.ssh_fingerprint_hash >>
+        PARAM_SSH_HOST_KEY_ALGORITHMS: << parameters.ssh_host_key_algorithms >>
+        PARAM_SSH_KEX_ALGORITHMS: << parameters.ssh_kex_algorithms >>
+      command: << include(scripts/checkout_fips.sh) >>

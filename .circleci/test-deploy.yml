@@ -24,7 +24,7 @@ jobs:
       - image: cimg/base:current-22.04
     resource_class: small
     steps:
-      - corecci/checkout_fips
+      - corecci/checkout
       - run:
           name: Verify Full Checkout
           shell: /bin/bash
@@ -40,7 +40,7 @@ jobs:
       - image: cimg/base:current-22.04
     resource_class: small
     steps:
-      - corecci/checkout_fips:
+      - corecci/checkout:
           fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
       - run:
           name: Verify Full Checkout
@@ -57,7 +57,7 @@ jobs:
       - image: cimg/base:current-22.04
     resource_class: small
     steps:
-      - corecci/checkout_fips:
+      - corecci/checkout:
           depth: shallow
           fingerprint: SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc
       - run:
@@ -79,7 +79,7 @@ jobs:
       - image: cimg/base:current-22.04
     resource_class: small
     steps:
-      - corecci/checkout_fips:
+      - corecci/checkout:
           depth: empty
           fingerprint: SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc
       - run:
@@ -106,7 +106,7 @@ jobs:
           command: |
             # EL9 doesn't ship with git or an ssh client by default.
             dnf install openssh-clients git -y
-      - corecci/checkout_fips:
+      - corecci/checkout:
           fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
 
 workflows:
