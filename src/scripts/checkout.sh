@@ -177,7 +177,7 @@ fi
 echo "Running git clone using ssh..."
 
 # If we have an SSH key file on disk, use it directly and specify IdentitiesOnly=yes with IdentityAgent=none to
-# 3prevent ssh-agent from being used. This is only on disk if the built-in CircleCI checkout command was used OR
+# prevent ssh-agent from being used. This is only on disk if the built-in CircleCI checkout command was used OR
 # if the user provided a fingerprint and we ran the add_ssh_keys command before calling this script. In all other
 # cases, the key is in ssh-agent that we're able to access due to SSH_AUTH_SOCK being set.
 if [[ -n "${SSH_KEY_FILE}" ]]; then
