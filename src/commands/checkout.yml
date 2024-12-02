@@ -30,6 +30,8 @@ parameters:
     description: >
       (optional) Hash algorithm to use for the SSH fingerprint.
         - Per NSA CNSA 2.0, SHA-384 SHOULD be used and SHA-512 MAY be used.
+        - This is NOT a a comma-separated list like the other parameters. The SSH command expects a
+          single value for the fingerprint hash. Consider changing to an enum after more testing.
   ssh_host_key_algorithms:
     type: string
     default: "ecdsa-sha2-nistp384,ecdsa-sha2-nistp256,rsa-sha2-512"
