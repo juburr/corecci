@@ -62,4 +62,4 @@ steps:
         PARAM_SSH_FINGERPRINT_HASH: << parameters.ssh_fingerprint_hash >>
         PARAM_SSH_HOST_KEY_ALGORITHMS: << parameters.ssh_host_key_algorithms >>
         PARAM_SSH_KEX_ALGORITHMS: << parameters.ssh_kex_algorithms >>
-      command: << include(scripts/checkout_fips.sh) >>
+      command: << include(scripts/checkout.sh) >>
