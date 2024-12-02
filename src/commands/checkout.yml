@@ -26,7 +26,7 @@ parameters:
         - Per NSA CNSA 2.0, the "aes256-gcm@openssh.com" encryption algorithm MUST be used.
   ssh_fingerprint_hash:
     type: string
-    default: "sha384,sha512"
+    default: "sha384"
     description: >
       (optional) Hash algorithm to use for the SSH fingerprint.
         - Per NSA CNSA 2.0, SHA-384 SHOULD be used and SHA-512 MAY be used.
