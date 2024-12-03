@@ -43,6 +43,7 @@ jobs:
     docker:
       - image: cimg/go:1.23
     environment:
+      GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"
       GIT_TRACE: 1
       GODEBUG: netdns=cgo+2
       GOPRIVATE: github.com/juburr/*
