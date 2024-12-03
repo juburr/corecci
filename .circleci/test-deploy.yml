@@ -34,6 +34,24 @@ jobs:
               exit 1
             fi
 
+  # "go mod download" uses git under the hood, via either ssh or https.
+  # This is primarily a test to ensure that GIT_SSH_COMMAND is being
+  # persisted to subsequent steps and that other applications can
+  # successfully use ssh afterwards. In CircleCI, the "checkout" command
+  # has the secondary purpose of setting up all of your SSH keys for you.
+  go_mod_download:
+    docker:
+      - image: cimg/go:1.23
+    resource_class: small
+    steps:
+      - corecci/checkout:
+          depth: shallow
+      - run:
+          name: Go Mod Download
+          command: |
+            cd tests/gomod
+            go mod download -x
+
   # Ubuntu 22 does not have FIPS mode enabled by default.
   checkout_fips-ubuntu22-test:
     docker:
@@ -123,6 +141,8 @@ workflows:
           filters: *filters
       - checkout_fips-rocky9-test:
           filters: *filters
+      - go_mod_download:
+          filters: *filters  
 
       # The orb must be re-packed for publishing, and saved to the workspace.
       - orb-tools/pack:
@@ -139,5 +159,6 @@ workflows:
             - checkout_fips_shallow-ubuntu22-test
             - checkout_fips_empty-ubuntu22-test
             - checkout_fips-rocky9-test
+            - go_mod_download
           context: orb-publishing
           filters: *release-filters
