@@ -43,8 +43,10 @@ jobs:
     docker:
       - image: cimg/go:1.23
     environment:
+      GIT_TRACE: 1
       GODEBUG: netdns=cgo+2
       GOPRIVATE: github.com/juburr/*
+      GOPROXY: direct
     resource_class: small
     steps:
       - corecci/checkout:
@@ -52,7 +54,7 @@ jobs:
       - run:
           name: Use SSH for Git
           command: |
-            git config --global --add url.git@github.com:.insteadOf https://github.com/
+            git config --global --add url.ssh://git@github.com/.insteadOf https://github.com/
       - run:
           name: Go Mod Download
           command: |
