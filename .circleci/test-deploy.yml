@@ -54,6 +54,7 @@ jobs:
       - run:
           name: Use SSH for Git
           command: |
+            git config --global url."git@github.com:".insteadOf "git://github.com/"
             git config --global url."git@github.com:".insteadOf "https://github.com/"
       - run:
           name: Go Mod Download
