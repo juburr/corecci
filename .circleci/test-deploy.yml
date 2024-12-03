@@ -42,10 +42,16 @@ jobs:
   go_mod_download:
     docker:
       - image: cimg/go:1.23
+    environment:
+      GOPRIVATE: github.com/juburr/*
     resource_class: small
     steps:
       - corecci/checkout:
           depth: shallow
+      - run:
+          name: Use SSH for Git
+          command: |
+            git config --global --add url."git@github.com:".insteadOf "https://github.com/"
       - run:
           name: Go Mod Download
           command: |
