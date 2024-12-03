@@ -39,11 +39,17 @@ jobs:
   # persisted to subsequent steps and that other applications can
   # successfully use ssh afterwards. In CircleCI, the "checkout" command
   # has the secondary purpose of setting up all of your SSH keys for you.
+  # "go mod download" uses git under the hood, via either ssh or https.
+  # This is primarily a test to ensure that GIT_SSH_COMMAND is being
+  # persisted to subsequent steps and that other applications can
+  # successfully use ssh afterwards. In CircleCI, the "checkout" command
+  # has the secondary purpose of setting up all of your SSH keys for you.
   go_mod_download:
     docker:
       - image: cimg/go:1.23
     environment:
       GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"
+      GIT_TERMINAL_PROMPT: 0
       GIT_TRACE: 1
       GODEBUG: netdns=cgo+2
       GOPRIVATE: github.com/juburr/*

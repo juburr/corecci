@@ -189,7 +189,7 @@ fi
 export GIT_SSH_COMMAND="ssh -o KexAlgorithms=${SSH_KEX_ALGORITHMS} -o HostKeyAlgorithms=${SSH_HOST_KEY_ALGORITHMS} -o Ciphers=${SSH_CIPHERS} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${HOME}/.ssh/known_hosts -o FingerprintHash=${SSH_FINGERPRINT_HASH} -o ForwardAgent=no -o ForwardX11=no ${SSH_KEY_ARGS:-}"
 echo "Computed SSH_KEY_ARGS: ${SSH_KEY_ARGS:-}"
 echo "Computed GIT_SSH_COMMAND: ${GIT_SSH_COMMAND:-}"
-echo "export GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-}" >> "$BASH_ENV"
+echo "export GIT_SSH_COMMAND=\"${GIT_SSH_COMMAND:-}\"" >> "$BASH_ENV"
 
 echo "Cloning the repository with depth: ${DEPTH}..."
 if [[ "${DEPTH}" == "full" ]]; then
