@@ -22,10 +22,10 @@ fi
 # Check that required parameters were supplied
 # This means that the variables must be non-empty from the perspective of *this* script.
 # They can still be optional orb parameters if default values are provided.
-REQUIRED_PARAMS=("PARAM_DEPTH")
+REQUIRED_PARAMS=("PARAM_DEPTH" "PARAM_SUBMODULES")
 for PARAM in "${REQUIRED_PARAMS[@]}"; do
     if [[ -z "${!PARAM}" ]]; then
-        echo "ERROR: Param '$PARAM' is required but not set."
+        echo "FATAL: Param '$PARAM' is required but not set."
         exit 1
     fi
 done
@@ -38,6 +38,7 @@ if command -v circleci &> /dev/null; then
     SSH_HOST_KEY_ALGORITHMS=$(circleci env subst "$PARAM_SSH_HOST_KEY_ALGORITHMS")
     SSH_KEX_ALGORITHMS=$(circleci env subst "$PARAM_SSH_KEX_ALGORITHMS")
     SSH_KEY_FINGERPRINT=$(circleci env subst "$PARAM_FINGERPRINT")
+    SUBMODULES=$(circleci env subst "$PARAM_SUBMODULES")
 else
     DEPTH="$PARAM_DEPTH"
     SSH_CIPHERS="$PARAM_SSH_CIPHERS"
@@ -45,6 +46,25 @@ else
     SSH_HOST_KEY_ALGORITHMS="$PARAM_SSH_HOST_KEY_ALGORITHMS"
     SSH_KEX_ALGORITHMS="$PARAM_SSH_KEX_ALGORITHMS"
     SSH_KEY_FINGERPRINT="$PARAM_FINGERPRINT"
+    SUBMODULES="$PARAM_SUBMODULES"
+fi
+
+# Input validation of parameter values
+VALID_SUBMODULES=("none" "recursive" "recursive-shallow" "top-level" "top-level-shallow")
+if [[ ! " ${VALID_SUBMODULES[*]} " =~ ${SUBMODULES} ]]; then
+    echo "FATAL: Invalid SUBMODULES value '${SUBMODULES}'. Must be one of: ${VALID_SUBMODULES[*]}"
+    exit 1
+fi
+VALID_DEPTH=("empty" "shallow" "full")
+if [[ ! " ${VALID_DEPTH[*]} " =~ ${DEPTH} ]]; then
+    echo "FATAL: Invalid DEPTH value '${DEPTH}'. Must be one of: ${VALID_DEPTH[*]}"
+    exit 1
+fi
+
+# Input validation of parameter combinations
+if [[ "${DEPTH}" == "empty" && "${SUBMODULES}" != "none" ]]; then
+    echo "FATAL: Submodules cannot be checked out when the depth parameter is set to 'empty'."
+    exit 1
 fi
 
 # Print orb parameters for debugging purposes
@@ -59,6 +79,7 @@ echo "  SSH_FINGERPRINT_HASH: ${SSH_FINGERPRINT_HASH:-}"
 echo "  SSH_HOST_KEY_ALGORITHMS: ${SSH_HOST_KEY_ALGORITHMS:-}"
 echo "  SSH_KEX_ALGORITHMS: ${SSH_KEX_ALGORITHMS:-}"
 echo "  SSH_KEY_FINGERPRINT: ${SSH_KEY_FINGERPRINT:-}"
+echo "  SUBMODULES: ${SUBMODULES:-}"
 
 # Extract the GitHub domain name from the CIRCLE_REPOSITORY_URL.
 # Input format: git@<GH_HOST>:<ORG>/<REPO>
@@ -200,7 +221,8 @@ if [[ "${DEPTH}" == "full" ]]; then
     fi
     echo "Checking out reference '${CHECKOUT_REF}'..."
     if ! git checkout "${CHECKOUT_REF}"; then
-        echo "ERROR: git checkout failed."
+        echo "FATAL: git checkout failed."
+        exit 1
     fi
 elif [[ "${DEPTH}" == "shallow" ]]; then
     echo "Initializing git repository..."
@@ -227,7 +249,7 @@ elif [[ "${DEPTH}" == "shallow" ]]; then
         exit 1
     fi
 elif [[ "${DEPTH}" == "empty" ]]; then
-    echo "CLoning git repository without source code..."
+    echo "Cloning git repository without source code..."
     if ! git clone --no-checkout "$CIRCLE_REPOSITORY_URL"; then
         echo "FATAL: git clone failed."
         exit 1
@@ -236,6 +258,28 @@ else
     echo "FATAL: Unknown depth parameter value: ${DEPTH}"
     exit 1
 fi
+
+# Checkout submodules if requested
+if [[ "${SUBMODULES}" != "none" ]]; then
+    echo "Checking out submodules for '${CHECKOUT_REF}'..."
+
+    SUBMODULES_ARG=()
+    if [[ "${SUBMODULES}" == "recursive" ]]; then
+        SUBMODULES_ARG=(--init --recursive)
+    elif [[ "${SUBMODULES}" == "recursive-shallow" ]]; then
+        SUBMODULES_ARG=(--init --recursive --depth=1)
+    elif [[ "${SUBMODULES}" == "top-level" ]]; then
+        SUBMODULES_ARG=(--init)
+    elif [[ "${SUBMODULES}" == "top-level-shallow" ]]; then
+        SUBMODULES_ARG=(--init --depth=1)
+    fi
+
+    if ! git submodule update "${SUBMODULES_ARG[@]}"; then
+        echo "FATAL: git submodule update failed."
+        exit 1
+    fi
+fi
+
 echo "FIPS-compliant code checkout completed."
 
 # Cleanup
