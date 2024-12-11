@@ -18,6 +18,9 @@
   - **Blazing Fast Shallow Checkouts**  
   Many organizations have enormous git respositories that have built up over the course of more than a decade, to include monorepos that host multiple services or applications. CircleCI's built-in `checkout` command for these repositories can often take a ridiculous amount of time. This orb provides a shallow checkout command to pull source code for the current head commit only, with a depth of 1. This allows for extremely fast checkouts when using massive repositories as compared to the built-in checkout command. For example, one of my repositories saw the duration of code checkouts fall **from ~20-35 seconds to ~2 seconds**.
 
+  - **Easy Submodule Checkouts**  
+  The checkout command includes convenience parameters to checkout all submodules, as this is such a common use case. The submodules can also be checked out with a shallow option to improve checkout speeds.
+
 - **Persist to S3 command**  
 After many years of working with CircleCI, I also observed that the `persist_to_workspace` command could also suck up tons of time, especially to tar and un-tar files. Many companies also persist certain release artifacts to an S3 storage for long-term storage. This orb therefore offers a `persist_to_s3` command as a convenience command. Development of this feature is still in progress.
 
@@ -43,7 +46,7 @@ The app will display the fingerprint of the key you just added. Place this finge
   version: 2.1
 
   orbs:
-    corecci: juburr/corecci@0.2.0
+    corecci: juburr/corecci@0.3.0
 
   jobs:
     ubi9_fips_job:
@@ -52,7 +55,9 @@ The app will display the fingerprint of the key you just added. Place this finge
       resource_class: small
       steps:
         - corecci/checkout:
+            depth: "shallow"
             fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+            submodules: "recursive-shallow"
 
   workflows:
     use-my-orb:
