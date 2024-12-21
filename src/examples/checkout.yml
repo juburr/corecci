@@ -3,7 +3,7 @@ description: >
 usage:
   version: 2.1
   orbs:
-    corecci: juburr/corecci@0.0.1
+    corecci: juburr/corecci@0.3.0
   jobs:
     ubi9_fips_job:
       docker:
@@ -12,6 +12,7 @@ usage:
       steps:
         - corecci/checkout:
             fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+            submodules: "recursive"
   workflows:
     use-my-orb:
       jobs:
