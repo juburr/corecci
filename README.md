@@ -49,7 +49,7 @@ The app will display the fingerprint of the key you just added. Place this finge
   version: 2.1
 
   orbs:
-    corecci: juburr/corecci@0.4.0
+    corecci: juburr/corecci@0.5.0
 
   jobs:
     ubi9_fips_job:

@@ -1,0 +1,37 @@
+description: >
+  Creates a GitHub release using convenience parameters for easily attaching
+  artifacts and appending details to the release notes.
+parameters:
+  artifact_checksums:
+    type: enum
+    default: "none"
+    enum: ["none", "md5", "sha1", "sha256", "sha384", "sha512"]
+    description: >
+      (optional) Append artifact checksums to the release notes.
+  artifact_manifest:
+    type: string
+    default: ""
+    description: >
+      (optional) Path to a file containing a list of artifacts to attach to the release.
+        The manifest should be a text file with the path to each artifact on a new line.
+  release_notes:
+    type: string
+    default: ""
+    description: >
+      (optional) Path to a file containing release notes for the release. If a file is
+        not provided, the release notes will be automatically generated.
+  project_name:
+    type: string
+    default: ""
+    description: >
+      (optional) Name of the project to use in the release title. If not provided, the
+        repository name will be used.
+steps:
+  - run:
+      name: Create GitHub Release
+      environment:
+        PARAM_ARTIFACT_CHECKSUMS: << parameters.artifact_checksums >>
+        PARAM_ARTIFACT_MANIFEST: << parameters.artifact_manifest >>
+        PARAM_PROJECT_NAME: << parameters.project_name >>
+        PARAM_RELEASE_NOTES: << parameters.release_notes >>
+      command: << include(scripts/gh_release.sh) >>

@@ -1,0 +1,25 @@
+description: >
+  Creates a new GitHub release.
+usage:
+  version: 2.1
+  orbs:
+    corecci: juburr/corecci@0.5.0
+  jobs:
+    release:
+      docker:
+        - image: cimg/base:current-22.04
+      resource_class: small
+      steps:
+        - corecci/gh_release:
+            artifact_manifest: rpm_manifest.txt
+            artifact_checksums: sha256
+            project_name: "CoreCCI"
+  workflows:
+    use-my-orb:
+      jobs:
+        - release:
+            filters:
+              branches:
+                ignore: /.*/
+              tags:
+                only: /.*/

@@ -283,7 +283,7 @@ if [[ "${SUBMODULES}" != "none" ]]; then
 fi
 
 if [[ "${CONFIGURE_GIT_SSH}" == "1" ]]; then
-    echo "Configuring git to use SSH over HTTPS..."
+    echo "Configuring git to use SSH instead of HTTPS..."
     if command -v git; then
         git config --global url."ssh://git@${GH_HOST}/".insteadOf "https://${GH_HOST}/"
         echo "Git has been configured."
