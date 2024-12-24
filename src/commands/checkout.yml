@@ -2,6 +2,11 @@ description: >
   Checkout a git repository with options such as FIPS-compliant SSH keys and shallow checkouts,
   adhering as closely as possible to the NSA's Commercial National Security Algorithm Suite (CNSA) 2.0.
 parameters:
+  configure_git_ssh:
+    type: boolean
+    default: true
+    description: >
+      (optional) Automatically configures git to use SSH instead of HTTPS globally.
   depth:
     type: enum
     default: "full"
@@ -69,6 +74,7 @@ steps:
   - run:
       name: FIPS Checkout
       environment:
+        PARAM_CONFIGURE_GIT_SSH: << parameters.configure_git_ssh >>
         PARAM_DEPTH: << parameters.depth >>
         PARAM_FINGERPRINT: << parameters.fingerprint >>
         PARAM_SSH_CIPHERS: << parameters.ssh_ciphers >>
