@@ -24,7 +24,7 @@ fi
 # They can still be optional orb parameters if default values are provided.
 REQUIRED_PARAMS=("CONFIGURE_GIT_SSH" "PARAM_DEPTH" "PARAM_SUBMODULES")
 for PARAM in "${REQUIRED_PARAMS[@]}"; do
-    if [[ -z "${!PARAM}" ]]; then
+    if [[ -z "${!PARAM:-}" ]]; then
         echo "FATAL: Param '$PARAM' is required but not set."
         exit 1
     fi
