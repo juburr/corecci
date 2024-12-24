@@ -22,9 +22,9 @@ fi
 # Check that required parameters were supplied
 # This means that the variables must be non-empty from the perspective of *this* script.
 # They can still be optional orb parameters if default values are provided.
-REQUIRED_PARAMS=("PARAM_DEPTH" "PARAM_SUBMODULES")
+REQUIRED_PARAMS=("PARAM_CONFIGURE_GIT_SSH" "PARAM_DEPTH" "PARAM_SUBMODULES")
 for PARAM in "${REQUIRED_PARAMS[@]}"; do
-    if [[ -z "${!PARAM}" ]]; then
+    if [[ -z "${!PARAM:-}" ]]; then
         echo "FATAL: Param '$PARAM' is required but not set."
         exit 1
     fi
@@ -32,6 +32,7 @@ done
 
 # Read in the orb parameters
 if command -v circleci &> /dev/null; then
+    CONFIGURE_GIT_SSH=$(circleci env subst "$PARAM_CONFIGURE_GIT_SSH")
     DEPTH=$(circleci env subst "$PARAM_DEPTH")
     SSH_CIPHERS=$(circleci env subst "$PARAM_SSH_CIPHERS")
     SSH_FINGERPRINT_HASH=$(circleci env subst "$PARAM_SSH_FINGERPRINT_HASH")
@@ -40,6 +41,7 @@ if command -v circleci &> /dev/null; then
     SSH_KEY_FINGERPRINT=$(circleci env subst "$PARAM_FINGERPRINT")
     SUBMODULES=$(circleci env subst "$PARAM_SUBMODULES")
 else
+    CONFIGURE_GIT_SSH="$PARAM_CONFIGURE_GIT_SSH"
     DEPTH="$PARAM_DEPTH"
     SSH_CIPHERS="$PARAM_SSH_CIPHERS"
     SSH_FINGERPRINT_HASH="$PARAM_SSH_FINGERPRINT_HASH"
@@ -280,14 +282,25 @@ if [[ "${SUBMODULES}" != "none" ]]; then
     fi
 fi
 
+if [[ "${CONFIGURE_GIT_SSH}" == "1" ]]; then
+    echo "Configuring git to use SSH over HTTPS..."
+    if command -v git; then
+        git config --global url."ssh://git@${GH_HOST}/".insteadOf "https://${GH_HOST}/"
+        echo "Git has been configured."
+    else
+        echo "WARN: Parameter 'configure_git_ssh' was set to 'true', but the git command is not available."
+    fi
+fi
 echo "FIPS-compliant code checkout completed."
 
 # Cleanup
 echo "Cleaning up input parameters..."
+unset PARAM_CONFIGURE_GIT_SSH
 unset PARAM_DEPTH
 unset PARAM_SSH_CIPHERS
 unset PARAM_SSH_FINGERPRINT_HASH
 unset PARAM_SSH_HOST_KEY_ALGORITHMS
 unset PARAM_SSH_KEX_ALGORITHMS
 unset PARAM_SSH_KEY_FINGERPRINT
+unset PARAM_SUBMODULES
 echo "  Done."
