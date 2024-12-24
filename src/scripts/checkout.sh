@@ -22,7 +22,7 @@ fi
 # Check that required parameters were supplied
 # This means that the variables must be non-empty from the perspective of *this* script.
 # They can still be optional orb parameters if default values are provided.
-REQUIRED_PARAMS=("CONFIGURE_GIT_SSH" "PARAM_DEPTH" "PARAM_SUBMODULES")
+REQUIRED_PARAMS=("PARAM_CONFIGURE_GIT_SSH" "PARAM_DEPTH" "PARAM_SUBMODULES")
 for PARAM in "${REQUIRED_PARAMS[@]}"; do
     if [[ -z "${!PARAM:-}" ]]; then
         echo "FATAL: Param '$PARAM' is required but not set."
