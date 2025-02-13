@@ -24,6 +24,9 @@
   - **Auto-Configure Git**  
   Because the checkout command is effectively responsible for configuring SSH, this orb offers the option to subsequently auto-configure `git` to use SSH over HTTPS. This is especially useful when using Go in private repositories, as `go mod download` utilizes `git` under the hood. Using an SSH key associated a service user means you won't need a special context with `GITHUB_TOKEN` or `GH_ENTERPRISE_TOKEN` in order to download Go dependencies.
 
+  - **Auto-Install SSH & Git**  
+  The checkout command is reliant upon `git` and `ssh`. If not installed, this orb provides an option to automatically install the necessary packages before proceeding.
+
 - **Persist to S3 command**  
 After many years of working with CircleCI, I also observed that the `persist_to_workspace` command could also suck up tons of time, especially to tar and un-tar files. Many companies also persist certain release artifacts to an S3 storage for long-term storage. This orb therefore offers a `persist_to_s3` command as a convenience command. Development of this feature is still in progress.
 
