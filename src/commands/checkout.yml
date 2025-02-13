@@ -23,6 +23,11 @@ parameters:
       (optional) MD5 fingerprint of the ECDSA-based custom SSH key found in the CircleCI project settings.
         - Required if you want to use this orb in a FIPS-compliant environment.
         - Leaving this parameter empty will use the default deploy key in your project, which uses ED25519.
+  install_packages:
+    type: boolean
+    default: true
+    description: >
+      (optional) Automatically installs ssh and git if they are not already present on the system.
   ssh_ciphers:
     type: string
     default: "aes256-gcm@openssh.com"
@@ -65,6 +70,12 @@ parameters:
         - "top-level" fetches only the top-level submodules (without recursion), doing a full checkout of each.
         - "top-level-shallow" fetches only the top-level submodules (without recursion), doing a shallow checkout of each.
 steps:
+  - when:
+      condition: << parameters.install_packages >>
+      steps:
+        - run:
+            name: Install Checkout Dependencies
+            command: << include(scripts/install_deps.sh) >>
   - when:
       condition: << parameters.fingerprint >>
       steps:

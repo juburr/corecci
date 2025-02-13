@@ -101,11 +101,6 @@ jobs:
       - image: docker.io/rockylinux:9.3
     resource_class: small
     steps:
-      - run:
-          name: Install Required Dependencies
-          command: |
-            # EL9 doesn't ship with git or an ssh client by default.
-            dnf install openssh-clients git -y
       - corecci/checkout:
           fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
 
