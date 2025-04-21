@@ -3,7 +3,7 @@ description: >
 usage:
   version: 2.1
   orbs:
-    corecci: juburr/corecci@0.4.0
+    corecci: juburr/corecci@0.5.1
   jobs:
     ubi9_fips_job:
       docker:
