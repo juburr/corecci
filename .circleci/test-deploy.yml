@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  orb-tools: circleci/orb-tools@12.3
+  orb-tools: circleci/orb-tools@12.5
   corecci: {}
 
 # Use this tag to ensure test jobs always run,
@@ -17,106 +17,166 @@ release-filters: &release-filters
   tags:
     only: /^v[0-9]+\.[0-9]+\.[0-9]+$/
 
+# The ECDSA key in this project's additional SSH keys.
+fips-fingerprint: &fips-fingerprint "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+
+commands:
+  verify-checkout:
+    parameters:
+      depth:
+        type: enum
+        enum: ["full", "shallow", "empty"]
+    steps:
+      - run:
+          name: Verify the << parameters.depth >> checkout
+          command: |
+            set -euo pipefail
+            # GitHub's ECDSA host key, by the fingerprint GitHub publishes.
+            fingerprints=$(ssh-keygen -l -E sha256 -f ~/.ssh/known_hosts)
+            [[ "${fingerprints}" == *"SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM"* ]]
+            case "<< parameters.depth >>" in
+              full)
+                test "$(git rev-parse HEAD)" = "${CIRCLE_SHA1}"
+                test "$(git rev-list --count HEAD)" -gt 1
+                ;;
+              shallow)
+                test "$(git rev-parse HEAD)" = "${CIRCLE_SHA1}"
+                test "$(git rev-list --count HEAD)" -eq 1
+                ;;
+              empty)
+                # Only .git, in the working directory itself.
+                test "$(ls -A)" = ".git"
+                git cat-file -e "${CIRCLE_SHA1}^{commit}"
+                ;;
+            esac
+            # Later steps reach the repository with the exported GIT_SSH_COMMAND.
+            git ls-remote origin HEAD
+            echo "The << parameters.depth >> checkout is at ${CIRCLE_SHA1}."
+
 jobs:
-  # Use the default deploy key by not specifying a fingerprint.
-  checkout_deploy_key-ubuntu22-test:
+  checkout-test:
+    parameters:
+      image:
+        type: string
+      depth:
+        type: enum
+        enum: ["full", "shallow", "empty"]
+      fingerprint:
+        type: string
+        default: *fips-fingerprint
     docker:
-      - image: cimg/base:current-22.04
-    resource_class: small
-    steps:
-      - corecci/checkout
-      - run:
-          name: Verify Full Checkout
-          shell: /bin/bash
-          command: |
-            if [ $(git log --oneline | wc -l) -le 1 ]; then
-              echo "Full checkout failed. Expected more than one commit."
-              exit 1
-            fi
-
-  # Ubuntu 22 does not have FIPS mode enabled by default.
-  checkout_fips-ubuntu22-test:
-    docker:
-      - image: cimg/base:current-22.04
+      - image: << parameters.image >>
     resource_class: small
     steps:
       - corecci/checkout:
-          fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
-      - run:
-          name: Verify Full Checkout
-          shell: /bin/bash
-          command: |
-            if [ $(git log --oneline | wc -l) -le 1 ]; then
-              echo "Full checkout failed. Expected more than one commit."
-              exit 1
-            fi
+          depth: << parameters.depth >>
+          fingerprint: << parameters.fingerprint >>
+      - verify-checkout:
+          depth: << parameters.depth >>
 
-  # Test shallow checkout.
-  checkout_fips_shallow-ubuntu22-test:
+  # Host keys: ssh_known_hosts, from a variable, replaces GitHub's published keys, https URLs
+  # go over SSH with configure_git_ssh, and a key GitHub doesn't have fails
+  # the checkout against the real server.
+  host-key-test:
     docker:
-      - image: cimg/base:current-22.04
+      - image: cimg/base:current
     resource_class: small
     steps:
-      - corecci/checkout:
-          depth: shallow
-          fingerprint: SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc
+      # The parameter takes it from a variable, as it would from a context.
       - run:
-          name: Verify Shallow Checkout
-          shell: /bin/bash
+          name: Set GitHub's ECDSA host key in a variable
           command: |
-            if [ $(git log --oneline | wc -l) -ne 1 ]; then
-              echo "Shallow checkout failed. Expected only one commit."
-              exit 1
-            fi
-            if [ $(git branch --all | wc -l) -ne 1 ]; then
-              echo "Shallow checkout failed. Expected only one branch."
-              exit 1
-            fi
-
-  # Test empty checkout.
-  checkout_fips_empty-ubuntu22-test:
-    docker:
-      - image: cimg/base:current-22.04
-    resource_class: small
-    steps:
+            key=AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/
+            key+=y6v0mKV0U2w0WZ2YB/++Tpockg=
+            printf 'export %s=%q\n' GITHUB_KNOWN_HOST "github.com ecdsa-sha2-nistp256 ${key}" >> "${BASH_ENV}"
       - corecci/checkout:
-          depth: empty
-          fingerprint: SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc
+          fingerprint: *fips-fingerprint
+          ssh_known_hosts: ${GITHUB_KNOWN_HOST}
+      - verify-checkout:
+          depth: full
       - run:
-          name: Verify Empty Checkout
-          shell: /bin/bash
+          name: Verify that ssh_known_hosts replaced GitHub's published keys
           command: |
-            # Only the .git directory should be present in an empty checkout.
-            if [ $(ls -A | wc -l) -ne 1 ]; then
-              echo "Empty checkout failed. Expected only one file or directory."
+            test "$(grep -c '^github.com ' ~/.ssh/known_hosts)" -eq 1
+      - run:
+          name: Verify that https URLs of github.com go over SSH
+          command: |
+            test "$(git config --global --get url.ssh://git@github.com/.insteadOf)" = "https://github.com/"
+            git ls-remote "https://github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}" HEAD
+      - run:
+          name: Verify that a host key GitHub doesn't have fails the checkout
+          command: |
+            set -euo pipefail
+            work=$(mktemp -d)
+            ssh-keygen -q -t ecdsa -b 256 -N "" -f "${work}/wrong"
+            mkdir "${work}/home" "${work}/checkout"
+            cd "${work}/checkout"
+            if HOME="${work}/home" \
+              PARAM_CONFIGURE_GIT_SSH=false \
+              PARAM_DEPTH=shallow \
+              PARAM_FINGERPRINT="" \
+              PARAM_SSH_ACCEPT_NEW_HOST_KEY=false \
+              PARAM_SSH_CIPHERS=aes256-gcm@openssh.com \
+              PARAM_SSH_FINGERPRINT_HASH=sha384 \
+              PARAM_SSH_HOST_KEY_ALGORITHMS=ecdsa-sha2-nistp256 \
+              PARAM_SSH_KEX_ALGORITHMS=ecdh-sha2-nistp384 \
+              PARAM_SSH_KNOWN_HOSTS="github.com $(cut -d' ' -f1,2 "${work}/wrong.pub")" \
+              PARAM_SUBMODULES=none \
+              BASH_ENV="${work}/bash-env" \
+              bash ~/project/src/scripts/checkout.sh > "${work}/output" 2>&1; then
+              cat "${work}/output"
+              echo "The checkout succeeded with a host key GitHub doesn't have."
               exit 1
             fi
-
-  # UBI 9 and Rocky 9 should have FIPS mode enabled by default.
-  # FIPS isn't enabled on the underlying hosts at circleci.com though, so
-  # this isn't a true test of FIPS mode unfortunately. Just ensure the
-  # orb works on these distros.
-  checkout_fips-rocky9-test:
-    docker:
-      - image: docker.io/rockylinux:9.3
-    resource_class: small
-    steps:
-      - corecci/checkout:
-          fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+            cat "${work}/output"
+            grep -q "Host key verification failed" "${work}/output"
 
 workflows:
   test-deploy:
     jobs:
       # Test cases for the orb
-      - checkout_deploy_key-ubuntu22-test:
+      - checkout-test:
+          name: checkout-deploy-key-test
+          image: cimg/base:current
+          depth: full
+          # The project's deploy key, which CircleCI generates as ED25519.
+          fingerprint: ""
           filters: *filters
-      - checkout_fips-ubuntu22-test:
+      - checkout-test:
+          name: checkout-fips-<< matrix.depth >>-test
+          image: cimg/base:current
+          matrix:
+            parameters:
+              depth: ["full", "shallow", "empty"]
           filters: *filters
-      - checkout_fips_shallow-ubuntu22-test:
+      # Images without ssh or git, which the command installs with dnf,
+      # microdnf or apt-get.
+      - checkout-test:
+          name: checkout-rocky9-test
+          image: quay.io/rockylinux/rockylinux:9
+          depth: full
           filters: *filters
-      - checkout_fips_empty-ubuntu22-test:
+      - checkout-test:
+          name: checkout-rocky10-test
+          image: quay.io/rockylinux/rockylinux:10
+          depth: shallow
           filters: *filters
-      - checkout_fips-rocky9-test:
+      - checkout-test:
+          name: checkout-ubi9-minimal-test
+          image: registry.access.redhat.com/ubi9/ubi-minimal
+          depth: shallow
+          filters: *filters
+      - checkout-test:
+          name: checkout-ubi10-test
+          image: registry.access.redhat.com/ubi10/ubi
+          depth: full
+          filters: *filters
+      - checkout-test:
+          name: checkout-debian12-test
+          image: mirror.gcr.io/library/debian:12-slim
+          depth: shallow
+          filters: *filters
+      - host-key-test:
           filters: *filters
 
       # The orb must be re-packed for publishing, and saved to the workspace.
@@ -129,10 +189,15 @@ workflows:
           # Ensure this job requires all test jobs and the pack job.
           requires:
             - orb-tools/pack
-            - checkout_deploy_key-ubuntu22-test
-            - checkout_fips-ubuntu22-test
-            - checkout_fips_shallow-ubuntu22-test
-            - checkout_fips_empty-ubuntu22-test
-            - checkout_fips-rocky9-test
+            - checkout-deploy-key-test
+            - checkout-fips-full-test
+            - checkout-fips-shallow-test
+            - checkout-fips-empty-test
+            - checkout-rocky9-test
+            - checkout-rocky10-test
+            - checkout-ubi9-minimal-test
+            - checkout-ubi10-test
+            - checkout-debian12-test
+            - host-key-test
           context: orb-publishing
           filters: *release-filters

@@ -1,74 +1,85 @@
 description: >
-  Checkout a git repository with options such as FIPS-compliant SSH keys and shallow checkouts,
-  adhering as closely as possible to the NSA's Commercial National Security Algorithm Suite (CNSA) 2.0.
+  Check out the pipeline's commit over SSH, in place of CircleCI's built-in checkout, with an
+  ECDSA key from the project's additional SSH keys for FIPS mode, SSH algorithms from the
+  NSA's Commercial National Security Algorithm Suite (CNSA) 2.0, pinned host keys, and
+  shallow or empty checkouts and submodules on request.
 parameters:
   configure_git_ssh:
     type: boolean
     default: true
     description: >
-      (optional) Automatically configures git to use SSH instead of HTTPS globally.
+      Configure git globally to fetch https:// URLs of the repository's host over SSH, with the
+      same key and settings: Go modules, and submodules listed by https URL.
   depth:
     type: enum
     default: "full"
     enum: ["full", "shallow", "empty"]
     description: >
-      (optional) Checkout depth to use.
-       - Full clones fetch all history for the repository, and is the default behavior in CircleCI.
-       - Shallow clones only fetch code for the latest commit, but are incredibly fast.
-       - Empty clones fetch no code at all, which is useful for fetching metadata through git commands.
+      How much to check out.
+       - full: the whole history, as CircleCI's checkout does.
+       - shallow: only the pipeline's commit, which is much faster for large repositories.
+       - empty: the whole history without checking out any files, for jobs that only run git commands.
   fingerprint:
     type: string
     default: ""
     description: >
-      (optional) MD5 fingerprint of the ECDSA-based custom SSH key found in the CircleCI project settings.
-        - Required if you want to use this orb in a FIPS-compliant environment.
-        - Leaving this parameter empty will use the default deploy key in your project, which uses ED25519.
+      Fingerprint (SHA256:... or MD5) of an ECDSA key in the CircleCI project's additional SSH keys.
+      Needed in FIPS mode. Empty uses the project's deploy key, which CircleCI generates as ED25519.
   install_packages:
     type: boolean
     default: true
     description: >
-      (optional) Automatically installs ssh and git if they are not already present on the system.
+      Install ssh and git with the image's package manager (apt-get, apk, dnf, microdnf or yum)
+      if either is missing.
+  ssh_accept_new_host_key:
+    type: boolean
+    default: false
+    description: >
+      Trust the host key the server presents, unchecked, when ssh_known_hosts is empty and the
+      host isn't github.com or already in the image's known_hosts. Only for a server whose keys
+      you can't get from a trusted source.
   ssh_ciphers:
     type: string
     default: "aes256-gcm@openssh.com"
     description: >
-      (optional) Comma-separated list of SSH ciphers to use for the connection.
-        - Per NSA CNSA 2.0, the "aes256-gcm@openssh.com" encryption algorithm MUST be used.
+      Comma-separated SSH ciphers. CNSA 2.0 requires aes256-gcm@openssh.com.
   ssh_fingerprint_hash:
     type: string
     default: "sha384"
     description: >
-      (optional) Hash algorithm to use for the SSH fingerprint.
-        - Per NSA CNSA 2.0, SHA-384 SHOULD be used and SHA-512 MAY be used.
-        - This is NOT a a comma-separated list like the other parameters. The SSH command expects a
-          single value for the fingerprint hash. Consider changing to an enum after more testing.
+      Hash algorithm for the SSH fingerprints ssh prints (one value, not a list). CNSA 2.0 says
+      SHA-384 should be used and SHA-512 may be.
   ssh_host_key_algorithms:
     type: string
     default: "ecdsa-sha2-nistp384,ecdsa-sha2-nistp256,rsa-sha2-512"
     description: >
-      (optional) Comma-separated list of SSH host key algorithms to use for the connection.
-        - Per NSA CNSA 2.0, the ecdsa-sha2-nistp384 or rsa-sha2-512 algorithms MUST be used.
-        - I temporarily added ecdh-sha2-nistp256 to support orb use with GitHub. While
-          rsa-sha2-512 works AND is compliant, it throws a warning that the remote host identification
-          has changed, and the key it returns is not listed on GitHub's "SSH key fingerprints" webpage.
-        - GitHub offers: ssh-ed25519,ecdsa-sha2-nistp256,rsa-sha2-512,rsa-sha2-256,ssh-rsa.
+      Comma-separated SSH host key algorithms. CNSA 2.0 requires ecdsa-sha2-nistp384 or
+      rsa-sha2-512. ecdsa-sha2-nistp256 is in the default for GitHub, which offers no
+      ecdsa-sha2-nistp384 key.
   ssh_kex_algorithms:
     type: string
     default: "ecdh-sha2-nistp384"
     description: >
-      (optional) Comma-separated list of SSH key exchange algorithms to use for the connection.
-        - Per NSA CNSA 2.0, the ecdh-sha2-nistp384 algorithm MUST be used.
+      Comma-separated SSH key exchange algorithms. CNSA 2.0 requires ecdh-sha2-nistp384.
+  ssh_known_hosts:
+    type: string
+    default: ""
+    description: >
+      known_hosts lines with the repository server's host keys, such as a GitHub Enterprise
+      Server's. Empty uses GitHub's published keys for github.com, or the keys already in the
+      image's known_hosts for other hosts. Environment variables are expanded, so the lines
+      can come from a context.
   submodules:
     type: enum
     default: "none"
     enum: ["none", "recursive", "recursive-shallow", "top-level", "top-level-shallow"]
     description: >
-      (optional) Fetch submodules used within the target repository.
-        - "none" does not fetch submodules.
-        - "recursive" fetches all submodules and fully populates them.
-        - "recursive-shallow" fetches all submodules and populates them with a single commit.
-        - "top-level" fetches only the top-level submodules (without recursion), doing a full checkout of each.
-        - "top-level-shallow" fetches only the top-level submodules (without recursion), doing a shallow checkout of each.
+      Submodules to check out.
+       - none: no submodules.
+       - recursive: every submodule, with its whole history.
+       - recursive-shallow: every submodule, with only its commit.
+       - top-level: the repository's own submodules, without theirs, with their whole history.
+       - top-level-shallow: the repository's own submodules, without theirs, with only their commit.
 steps:
   - when:
       condition: << parameters.install_packages >>
@@ -88,9 +99,11 @@ steps:
         PARAM_CONFIGURE_GIT_SSH: << parameters.configure_git_ssh >>
         PARAM_DEPTH: << parameters.depth >>
         PARAM_FINGERPRINT: << parameters.fingerprint >>
+        PARAM_SSH_ACCEPT_NEW_HOST_KEY: << parameters.ssh_accept_new_host_key >>
         PARAM_SSH_CIPHERS: << parameters.ssh_ciphers >>
         PARAM_SSH_FINGERPRINT_HASH: << parameters.ssh_fingerprint_hash >>
         PARAM_SSH_HOST_KEY_ALGORITHMS: << parameters.ssh_host_key_algorithms >>
         PARAM_SSH_KEX_ALGORITHMS: << parameters.ssh_kex_algorithms >>
+        PARAM_SSH_KNOWN_HOSTS: << parameters.ssh_known_hosts >>
         PARAM_SUBMODULES: << parameters.submodules >>
       command: << include(scripts/checkout.sh) >>
