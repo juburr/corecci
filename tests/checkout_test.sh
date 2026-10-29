@@ -183,17 +183,33 @@ printf '%s' "${value}"
 EOF
 chmod +x "${STUBS}"/* "${CLI_STUB}/circleci"
 
-# The system PATH without directories that hold a real circleci, so the
-# script runs without the CLI unless a test adds the stand-in.
+# The system PATH without a real circleci, so the script runs without the CLI
+# unless a test adds the stand-in. A directory that holds one (cimg images
+# keep git beside it) is replaced by links to everything else in it.
 BASE_PATH=""
+SHADOWS=0
 IFS=: read -r -a path_dirs <<< "${PATH}"
 for dir in "${path_dirs[@]}"; do
-    if [[ -n "${dir}" && ! -x "${dir}/circleci" ]]; then
-        BASE_PATH="${BASE_PATH:+${BASE_PATH}:}${dir}"
+    [[ -n "${dir}" ]] || continue
+    if [[ -x "${dir}/circleci" ]]; then
+        SHADOWS=$((SHADOWS + 1))
+        shadow="${WORK}/path-${SHADOWS}"
+        mkdir -p "${shadow}"
+        for entry in "${dir}"/*; do
+            if [[ -e "${entry}" && "${entry##*/}" != circleci ]]; then
+                ln -s "${entry}" "${shadow}/${entry##*/}"
+            fi
+        done
+        dir=${shadow}
     fi
+    BASE_PATH="${BASE_PATH:+${BASE_PATH}:}${dir}"
 done
 if ! PATH=${BASE_PATH} command -v git > /dev/null; then
-    echo "ERROR: git is not on the PATH without the CircleCI CLI's directory." >&2
+    echo "ERROR: git is not on the PATH." >&2
+    exit 1
+fi
+if PATH=${BASE_PATH} command -v circleci > /dev/null; then
+    echo "ERROR: A circleci is still on the PATH: $(PATH=${BASE_PATH} command -v circleci)" >&2
     exit 1
 fi
 
