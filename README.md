@@ -126,7 +126,7 @@ The command installs `ssh` and `git` if the image lacks them, adds the key whose
        steps:
          - corecci/checkout:
              depth: shallow
-             fingerprint: "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+             fingerprint: "SHA256:VxLl73fnnzz4g4hmlxIhnq9+pONpFQtLNl8j9U8qEzE"
              submodules: recursive-shallow
 
    workflows:

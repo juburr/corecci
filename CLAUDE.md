@@ -50,7 +50,7 @@ Installs `ssh` and `git` when either is missing, with the first of `apt-get`, `a
 ### CI Pipeline (`.circleci/`)
 
 - `config.yml` - Setup workflow: `test-env-subst` (`tests/env_subst_test.sh` and `tests/shell_conventions_test.sh`), `test-scripts` (`tests/checkout_test.sh` and `tests/install_deps_test.sh`), orb-tools lint, pack and review (`orb_name: corecci`), shellcheck.
-- `test-deploy.yml` - Checks out this repository with the orb: the deploy key (ED25519) and the project's ECDSA key on `cimg/base` at each depth; Rocky Linux 9 and 10 (`quay.io`), UBI 9 minimal and UBI 10, and Debian 12 (`mirror.gcr.io`), which have no ssh or git; and `host-key-test`, which passes `ssh_known_hosts` from a variable, checks `configure_git_ssh` with an `https://` `git ls-remote`, and runs `checkout.sh` against GitHub with a host key GitHub doesn't have, which must fail host key verification. Publishing runs on `v*` tags. The ECDSA key's fingerprint, `SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc`, is in the project's additional SSH keys.
+- `test-deploy.yml` - Checks out this repository with the orb: the deploy key (ED25519) and the project's ECDSA P-384 key on `cimg/base` at each depth; Rocky Linux 9 and 10 (`quay.io`), UBI 9 minimal and UBI 10, and Debian 12 (`mirror.gcr.io`), which have no ssh or git; and `host-key-test`, which passes `ssh_known_hosts` from a variable, checks `configure_git_ssh` with an `https://` `git ls-remote`, and runs `checkout.sh` against GitHub with a host key GitHub doesn't have, which must fail host key verification. Publishing runs on `v*` tags. The ECDSA P-384 key's fingerprint, `SHA256:VxLl73fnnzz4g4hmlxIhnq9+pONpFQtLNl8j9U8qEzE`, is in the project's additional SSH keys.
 
 ### Tests (`tests/`)
 

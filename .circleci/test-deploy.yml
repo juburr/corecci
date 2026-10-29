@@ -17,8 +17,8 @@ release-filters: &release-filters
   tags:
     only: /^v[0-9]+\.[0-9]+\.[0-9]+$/
 
-# The ECDSA key in this project's additional SSH keys.
-fips-fingerprint: &fips-fingerprint "SHA256:1wS2Fom3QTXyH5G2DS88+II0U9ajqGKOeq1wBA740Fc"
+# The ECDSA P-384 key in this project's additional SSH keys.
+fips-fingerprint: &fips-fingerprint "SHA256:VxLl73fnnzz4g4hmlxIhnq9+pONpFQtLNl8j9U8qEzE"
 
 commands:
   verify-checkout:
