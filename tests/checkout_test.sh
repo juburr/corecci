@@ -91,12 +91,13 @@ if [[ "${1:-}" == -V ]]; then
     exit 0
 fi
 args=("$@")
-known="" accept=false port=22 host="" i=0
+known="" global=${STUB_GLOBAL_KNOWN_HOSTS:-} accept=false port=22 host="" i=0
 while [[ ${i} -lt ${#args[@]} ]]; do
     case "${args[i]}" in
         -o)
             case "${args[i + 1]}" in
                 UserKnownHostsFile=*) known=${args[i + 1]#*=} ;;
+                GlobalKnownHostsFile=*) global=${args[i + 1]#*=} ;;
                 StrictHostKeyChecking=accept-new) accept=true ;;
             esac
             i=$((i + 2))
@@ -121,7 +122,9 @@ if [[ "${accept}" == true ]]; then
     echo "git@${host}: Permission denied (publickey)." >&2
     exit 255
 fi
-if ! awk -v n="${name}" -v k="${STUB_SERVER_KEY}" '$1 == n && ($2 " " $3) == k { found = 1 } END { exit !found }' "${known}" 2> /dev/null; then
+# A key any line names is accepted, in the user's file or the global one.
+if ! cat "${known}" "${global:-/dev/null}" 2> /dev/null |
+    awk -v n="${name}" -v k="${STUB_SERVER_KEY}" '$1 == n && ($2 " " $3) == k { found = 1 } END { exit !found }'; then
     echo "Host key verification failed." >&2
     exit 255
 fi
@@ -140,7 +143,8 @@ EOF
 cat > "${STUBS}/ssh-keygen" << 'EOF'
 #!/bin/bash
 # ssh-keygen stand-in: -l -E sha256 -f FILE prints the fingerprint on FILE's
-# "fingerprint:" line; -F HOST -f FILE finds HOST in a known_hosts FILE.
+# "fingerprint:" line; -F HOST -f FILE finds HOST in a known_hosts FILE, and
+# -R HOST -f FILE removes its lines, keeping FILE.old as ssh-keygen does.
 if [[ "$1" == -l ]]; then
     fingerprint=$(awk '/^fingerprint: / { print $2 }' "${5}")
     if [[ -z "${fingerprint}" ]]; then
@@ -153,6 +157,11 @@ fi
 if [[ "$1" == -F ]]; then
     awk -v n="$2" '$1 == n { found = 1; print } END { exit !found }' "$4"
     exit
+fi
+if [[ "$1" == -R ]]; then
+    cp "$4" "$4.old"
+    awk -v n="$2" '$1 != n' "$4.old" > "$4"
+    exit 0
 fi
 echo "ssh-keygen stand-in: unexpected arguments $*" >&2
 exit 1
@@ -198,8 +207,9 @@ SERVER_KEY=${GITHUB_ECDSA}
 # run_checkout [VAR=value ...]: runs checkout.sh in a new empty directory with
 # a new HOME, the command's defaults and a github.com repository at SHA2,
 # overridden by the given assignments. Sets RC, OUTPUT, CO (the checkout),
-# HOME_DIR and BASH_ENV_FILE. PREPARE names a function run with HOME_DIR
-# first. (Bash 4.0 takes an empty "$@" for an unbound variable, so the
+# HOME_DIR, GLOBAL_FILE (the system-wide known_hosts the script and ssh read)
+# and BASH_ENV_FILE. PREPARE names a function run first with HOME_DIR and
+# GLOBAL_FILE. (Bash 4.0 takes an empty "$@" for an unbound variable, so the
 # assignments are copied only when there are some.)
 run_checkout() {
     local -a vars=()
@@ -214,11 +224,12 @@ run_checkout() {
     HOME_DIR="${WORK}/home ${CASE}"
     CO="${WORK}/checkout-${CASE}"
     BASH_ENV_FILE="${WORK}/bash-env-${CASE}"
+    GLOBAL_FILE="${WORK}/global-known-hosts-${CASE}"
     mkdir -p "${HOME_DIR}" "${CO}"
     : > "${BASH_ENV_FILE}"
     : > "${WORK}/ssh.log"
     if [[ -n "${PREPARE}" ]]; then
-        "${PREPARE}" "${HOME_DIR}"
+        "${PREPARE}" "${HOME_DIR}" "${GLOBAL_FILE}"
     fi
     set +e
     OUTPUT=$(cd "${CO}" && env -i \
@@ -229,6 +240,8 @@ run_checkout() {
         STUB_SSH_LOG="${WORK}/ssh.log" \
         STUB_REMOTE_ROOT="${REMOTE}" \
         STUB_SERVER_KEY="${SERVER_KEY}" \
+        STUB_GLOBAL_KNOWN_HOSTS="${GLOBAL_FILE}" \
+        CORECCI_GLOBAL_KNOWN_HOSTS="${GLOBAL_FILE}" \
         CIRCLE_REPOSITORY_URL=git@github.com:juburr/fixture.git \
         CIRCLE_SHA1="${SHA2}" \
         CIRCLE_BRANCH=main \
@@ -279,6 +292,8 @@ co_git() { git -C "${CO}" "$@"; }
 equals() { [[ "$1" == "$2" ]]; }
 known_hosts_has() { grep -qxF -- "$1" "${HOME_DIR}/.ssh/known_hosts"; }
 known_hosts_lacks_host() { ! grep -q "^$1 " "${HOME_DIR}/.ssh/known_hosts"; }
+known_hosts_lacks() { ! grep -qxF -- "$1" "${HOME_DIR}/.ssh/known_hosts"; }
+missing() { [[ ! -e "$1" ]]; }
 git_config_global() { HOME=${HOME_DIR} git config --global --get "$1" || true; }
 
 # --- Full, shallow and empty checkouts --------------------------------------
@@ -298,6 +313,7 @@ check "ssh uses the host key algorithms" ssh_log_has "-o HostKeyAlgorithms=ecdsa
 check "ssh uses the fingerprint hash" ssh_log_has "-o FingerprintHash=sha384"
 check "ssh uses no key file without a fingerprint" ssh_log_lacks IdentityFile
 check "ssh never accepts a new host key by default" ssh_log_lacks accept-new
+check "pinned keys exclude the system-wide known_hosts" ssh_log_has "-o GlobalKnownHostsFile=/dev/null"
 check "configure_git_ssh fetches https://github.com/ over SSH" \
     equals "$(git_config_global url.ssh://git@github.com/.insteadOf)" "https://github.com/"
 check "a missing CircleCI CLI is a warning" output_has "WARN: The CircleCI CLI is not installed"
@@ -311,9 +327,9 @@ sourced_words() {
     env -i bash -c '. "$1"; sh -c "printf \"%s\\n\" $GIT_SSH_COMMAND"' _ "${BASH_ENV_FILE}" | paste -sd'|' -
 }
 # expected_words [WORD...]: prints the words of GIT_SSH_COMMAND for the
-# defaults and HOME_DIR, then WORDs, joined by |.
+# defaults, HOME_DIR and pinned keys, then WORDs, joined by |.
 expected_words() {
-    local words="ssh|-o|KexAlgorithms=ecdh-sha2-nistp384|-o|HostKeyAlgorithms=ecdsa-sha2-nistp384,ecdsa-sha2-nistp256,rsa-sha2-512|-o|Ciphers=aes256-gcm@openssh.com|-o|StrictHostKeyChecking=yes|-o|UserKnownHostsFile=${HOME_DIR}/.ssh/known_hosts|-o|FingerprintHash=sha384|-o|ForwardAgent=no|-o|ForwardX11=no"
+    local words="ssh|-o|KexAlgorithms=ecdh-sha2-nistp384|-o|HostKeyAlgorithms=ecdsa-sha2-nistp384,ecdsa-sha2-nistp256,rsa-sha2-512|-o|Ciphers=aes256-gcm@openssh.com|-o|StrictHostKeyChecking=yes|-o|UserKnownHostsFile=${HOME_DIR}/.ssh/known_hosts|-o|FingerprintHash=sha384|-o|ForwardAgent=no|-o|ForwardX11=no|-o|GlobalKnownHostsFile=/dev/null"
     local word
     # Bash 4.0 takes an empty "$@" for an unbound variable.
     if [[ $# -gt 0 ]]; then
@@ -428,6 +444,28 @@ PREPARE=""
 check "a host already in known_hosts checks out" rc_is 0
 check "a host already in known_hosts is used as it is" output_has "already in the image's known_hosts"
 check "a host already in known_hosts is not scanned" ssh_log_lacks accept-new
+check "keys from the image's known_hosts don't exclude the system-wide file" ssh_log_lacks GlobalKnownHostsFile
+
+global_host() {
+    printf 'git.example.com %s\n' "${EXAMPLE_KEY}" > "$2"
+}
+PREPARE=global_host
+run_checkout "${EXAMPLE_URL}"
+PREPARE=""
+check "a host in the system-wide known_hosts checks out" rc_is 0
+check "a host in the system-wide known_hosts is used as it is" output_has "already in the image's known_hosts"
+
+stale_user() {
+    mkdir -p "$1/.ssh"
+    printf 'other.example.com %s\ngit.example.com %s\n' "${OTHER_KEY}" "${OTHER_KEY}" > "$1/.ssh/known_hosts"
+}
+PREPARE=stale_user
+run_checkout "${EXAMPLE_URL}" "PARAM_SSH_KNOWN_HOSTS=git.example.com ${EXAMPLE_KEY}"
+PREPARE=""
+check "ssh_known_hosts checks out over a stale key for the host" rc_is 0
+check "ssh_known_hosts removes the host's other keys" known_hosts_lacks "git.example.com ${OTHER_KEY}"
+check "ssh_known_hosts keeps other hosts' keys" known_hosts_has "other.example.com ${OTHER_KEY}"
+check "removing the host's keys leaves no known_hosts.old" missing "${HOME_DIR}/.ssh/known_hosts.old"
 
 run_checkout "${EXAMPLE_URL}" PARAM_SSH_ACCEPT_NEW_HOST_KEY=true
 check "ssh_accept_new_host_key checks out" rc_is 0
@@ -459,6 +497,30 @@ check "ssh_known_hosts with [host]:port checks out" rc_is 0
 check "ssh_known_hosts with the host isn't a warning" output_lacks "WARN: No line in ssh_known_hosts"
 
 SERVER_KEY=${GITHUB_ECDSA}
+# The server presents a key the image trusts but GitHub doesn't publish.
+SERVER_KEY=${EXAMPLE_KEY}
+user_trusts_other_key() {
+    mkdir -p "$1/.ssh"
+    printf 'github.com %s\nother.example.com %s\n' "${EXAMPLE_KEY}" "${OTHER_KEY}" > "$1/.ssh/known_hosts"
+}
+PREPARE=user_trusts_other_key
+run_checkout
+PREPARE=""
+check "a key in ~/.ssh/known_hosts that GitHub doesn't publish is refused" rc_is 1
+check "the refused key fails host key verification" output_has "Host key verification failed."
+check "the key GitHub doesn't publish is removed from known_hosts" known_hosts_lacks "github.com ${EXAMPLE_KEY}"
+
+global_trusts_other_key() {
+    printf 'github.com %s\nother.example.com %s\n' "${EXAMPLE_KEY}" "${OTHER_KEY}" > "$2"
+}
+PREPARE=global_trusts_other_key
+run_checkout
+PREPARE=""
+check "a key in the system-wide known_hosts that GitHub doesn't publish is refused" rc_is 1
+check "the system-wide file's other hosts are kept in ~/.ssh/known_hosts" known_hosts_has "other.example.com ${OTHER_KEY}"
+check "the system-wide file's key for github.com is not copied" known_hosts_lacks "github.com ${EXAMPLE_KEY}"
+SERVER_KEY=${GITHUB_ECDSA}
+
 run_checkout CIRCLE_REPOSITORY_URL=https://github.com/juburr/fixture
 check "an https URL checks out over SSH" rc_is 0
 check "an https URL becomes git@host:path" output_has "Computed clone URL: git@github.com:juburr/fixture"

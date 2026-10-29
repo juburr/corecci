@@ -165,11 +165,13 @@ The checkout exports `GIT_SSH_COMMAND` through `BASH_ENV`, so later `git fetch`,
 
 Before it connects, the command makes sure `~/.ssh/known_hosts` holds the server's host key, and ssh then refuses any other (`StrictHostKeyChecking=yes`). The first of these that applies decides:
 
-1. **`ssh_known_hosts`**: the lines you give are added.
-2. **github.com**: GitHub's [published host keys](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints) are added.
+1. **`ssh_known_hosts`**: the lines you give become the only keys trusted for the host.
+2. **github.com**: GitHub's [published host keys](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints) become the only keys trusted for it.
 3. **The image's `known_hosts`**: a key for the host already in `~/.ssh/known_hosts` or `/etc/ssh/ssh_known_hosts` is used as it is.
 4. **`ssh_accept_new_host_key: true`**: the key the server presents now is trusted, with a warning.
 5. Otherwise the checkout fails, before connecting.
+
+ssh accepts a host key that any `known_hosts` line names, so in the first two cases the host's other keys are removed from `~/.ssh/known_hosts`, and `GIT_SSH_COMMAND` ignores the system-wide `/etc/ssh/ssh_known_hosts`, after copying its lines for other hosts into `~/.ssh/known_hosts`. An image that still trusts an old key, such as GitHub's RSA key from before 2023, can't undo the pin. That needs `ssh-keygen`, which ships with ssh.
 
 For a GitHub Enterprise Server, get its keys from a source you trust, such as its administrator or `ssh-keyscan` from a machine on a trusted network checked against the fingerprints they publish. Store the lines in a context, and pass the variable:
 

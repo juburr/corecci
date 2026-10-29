@@ -243,38 +243,80 @@ add_known_hosts() {
     done <<< "$1"
 }
 
-# known_host_listed FILE: succeeds if FILE holds a key for the host, hashed
-# host names included.
+# ssh's system-wide known_hosts files, which the tests point elsewhere.
+read -r -a GLOBAL_KNOWN_HOSTS_FILES <<< "${CORECCI_GLOBAL_KNOWN_HOSTS:-/etc/ssh/ssh_known_hosts /etc/ssh/ssh_known_hosts2}"
+
+# known_host_listed FILE...: succeeds if a FILE holds a key for the host,
+# hashed host names included.
 known_host_listed() {
-    [[ -f "$1" ]] && command -v ssh-keygen > /dev/null 2>&1 &&
-        ssh-keygen -F "${KNOWN_HOST}" -f "$1" > /dev/null 2>&1
+    local file
+    command -v ssh-keygen > /dev/null 2>&1 || return 1
+    for file in "$@"; do
+        if [[ -f "${file}" ]] && ssh-keygen -F "${KNOWN_HOST}" -f "${file}" > /dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
 }
 
-SCAN_FILE=""
+WORK_DIR=$(mktemp -d)
 cleanup() {
-    if [[ -n "${SCAN_FILE}" ]]; then
-        rm -f "${SCAN_FILE}"
-    fi
+    rm -rf "${WORK_DIR}"
 }
 trap cleanup EXIT
 
+# pin_known_hosts LINES: makes LINES the only keys ssh trusts for the host.
+# ssh accepts a host key that any line names, so the host's other keys come
+# out of the known_hosts file, and GIT_SSH_COMMAND ignores the system-wide
+# files, whose lines for other hosts are copied in first.
+PINNED=false
+pin_known_hosts() {
+    local file copy
+    for file in "${KNOWN_HOSTS_FILE}" ${GLOBAL_KNOWN_HOSTS_FILES[@]+"${GLOBAL_KNOWN_HOSTS_FILES[@]}"}; do
+        if [[ -s "${file}" ]] && ! command -v ssh-keygen > /dev/null 2>&1; then
+            echo "ERROR: ssh-keygen is required to remove other keys for ${KNOWN_HOST} from ${file}, but is not installed." >&2
+            exit 1
+        fi
+    done
+    for file in ${GLOBAL_KNOWN_HOSTS_FILES[@]+"${GLOBAL_KNOWN_HOSTS_FILES[@]}"}; do
+        if [[ -s "${file}" && -r "${file}" ]]; then
+            copy="${WORK_DIR}/global_known_hosts"
+            cp "${file}" "${copy}"
+            if ! ssh-keygen -R "${KNOWN_HOST}" -f "${copy}" > /dev/null 2>&1; then
+                echo "ERROR: Could not remove the keys for ${KNOWN_HOST} from a copy of ${file}." >&2
+                exit 1
+            fi
+            add_known_hosts "$(cat "${copy}")"
+        fi
+    done
+    if [[ -s "${KNOWN_HOSTS_FILE}" ]]; then
+        if ! ssh-keygen -R "${KNOWN_HOST}" -f "${KNOWN_HOSTS_FILE}" > /dev/null 2>&1; then
+            echo "ERROR: Could not remove the keys for ${KNOWN_HOST} from ${KNOWN_HOSTS_FILE}." >&2
+            exit 1
+        fi
+        rm -f "${KNOWN_HOSTS_FILE}.old"
+    fi
+    add_known_hosts "$1"
+    PINNED=true
+}
+
 if [[ -n "${SSH_KNOWN_HOSTS}" ]]; then
-    echo "Adding the host keys in ssh_known_hosts to ${KNOWN_HOSTS_FILE}."
-    add_known_hosts "${SSH_KNOWN_HOSTS}"
+    echo "Trusting only the host keys in ssh_known_hosts for ${KNOWN_HOST}."
+    pin_known_hosts "${SSH_KNOWN_HOSTS}"
     if command -v ssh-keygen > /dev/null 2>&1 && ! known_host_listed "${KNOWN_HOSTS_FILE}"; then
         echo "WARN: No line in ssh_known_hosts names ${KNOWN_HOST}, so ssh will refuse its host key." >&2
     fi
 elif [[ "${KNOWN_HOST}" == "github.com" ]]; then
-    echo "Adding GitHub's published host keys to ${KNOWN_HOSTS_FILE}."
-    add_known_hosts "${GITHUB_KNOWN_HOSTS}"
-elif known_host_listed "${KNOWN_HOSTS_FILE}" || known_host_listed /etc/ssh/ssh_known_hosts; then
+    echo "Trusting only GitHub's published host keys for github.com."
+    pin_known_hosts "${GITHUB_KNOWN_HOSTS}"
+elif known_host_listed "${KNOWN_HOSTS_FILE}" ${GLOBAL_KNOWN_HOSTS_FILES[@]+"${GLOBAL_KNOWN_HOSTS_FILES[@]}"}; then
     echo "Using the host keys for ${KNOWN_HOST} already in the image's known_hosts."
 elif [[ "${SSH_ACCEPT_NEW_HOST_KEY}" == true ]]; then
     # ssh records the key the server presents before it authenticates, with
     # the same algorithms git will use. ssh-keyscan would not do: with FIPS
     # mode on, as on RHEL 9, it fails to negotiate a key exchange.
     echo "WARN: Trusting the host key ${KNOWN_HOST} presents now (ssh_accept_new_host_key), without checking it." >&2
-    SCAN_FILE=$(mktemp)
+    SCAN_FILE="${WORK_DIR}/scanned_known_hosts"
     SCAN_OUTPUT=$(ssh -o BatchMode=yes \
         -o ConnectTimeout=30 \
         -o PubkeyAuthentication=no \
@@ -310,6 +352,10 @@ SSH_COMMAND=(ssh
     -o "FingerprintHash=${SSH_FINGERPRINT_HASH}"
     -o ForwardAgent=no
     -o ForwardX11=no)
+# Pinned keys are the only ones: the system-wide files could name others.
+if [[ "${PINNED}" == true ]]; then
+    SSH_COMMAND+=(-o GlobalKnownHostsFile=/dev/null)
+fi
 # A key file is used on its own, so ssh-agent's keys are never offered.
 if [[ -n "${SSH_KEY_FILE}" ]]; then
     SSH_COMMAND+=(-o IdentitiesOnly=yes -o IdentityAgent=none -o "IdentityFile=${SSH_KEY_FILE}")
