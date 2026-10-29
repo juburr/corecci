@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logos/corecci_500px.png" width="256" alt="CoreCCI Orb logo">
+<img src="assets/logos/corecci-512px.png" width="256" alt="CoreCCI Orb logo: an orange ring with a red core over a molten planet full of gears, framed by a dark stone rim">
 
 # CoreCCI for CircleCI
 
@@ -246,7 +246,7 @@ This is an unofficial, community-maintained orb, and contributions are welcome! 
 
 ## 🎨 Logo
 
-Need the logo for a slide deck, blog post, or internal developer portal? A PNG with a transparent background is in [`assets/logos`](assets/logos): [500](assets/logos/corecci_500px.png) px
+Need the logo for a slide deck, blog post, or internal developer portal? PNGs with transparent backgrounds are in [`assets/logos`](assets/logos): [64](assets/logos/corecci-64px.png) · [128](assets/logos/corecci-128px.png) · [256](assets/logos/corecci-256px.png) · [512](assets/logos/corecci-512px.png) · [1024](assets/logos/corecci-1024px.png) px
 
 ## 📜 License
 
@@ -255,7 +255,7 @@ Need the logo for a slide deck, blog post, or internal developer portal? A PNG w
 <br>
 
 <div align="center">
-  <img src="assets/logos/corecci_500px.png" width="64" alt="CoreCCI Orb logo">
+  <img src="assets/logos/corecci-128px.png" width="64" alt="CoreCCI Orb logo">
   <br>
   <sub>Check out code you can vouch for. If this orb helps your team, a ⭐ helps others find it.</sub>
   <br>
