@@ -1,27 +1,57 @@
 version: 2.1
 setup: true
 orbs:
-  orb-tools: circleci/orb-tools@12.3
+  orb-tools: circleci/orb-tools@12.5
   shellcheck: circleci/shellcheck@3.4
 
 filters: &filters
   tags:
     only: /.*/
 
+jobs:
+  test-env-subst:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Run circleci env subst tests
+          command: bash tests/env_subst_test.sh
+      - run:
+          name: Run shell conventions test
+          command: bash tests/shell_conventions_test.sh
+  test-scripts:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Run the checkout tests against local repositories
+          command: bash tests/checkout_test.sh
+      - run:
+          name: Run the dependency install tests
+          command: bash tests/install_deps_test.sh
+
 workflows:
   lint-pack:
     jobs:
+      - test-env-subst:
+          filters: *filters
+      - test-scripts:
+          filters: *filters
       - orb-tools/lint:
           filters: *filters
       - orb-tools/pack:
           filters: *filters
       - orb-tools/review:
+          orb_name: corecci
           filters: *filters
       - shellcheck/check:
           filters: *filters
+      # Triggers the next workflow in the Orb Development Kit.
       - orb-tools/continue:
           pipeline_number: << pipeline.number >>
           vcs_type: << pipeline.project.type >>
           orb_name: corecci
-          requires: [orb-tools/lint, orb-tools/pack, orb-tools/review, shellcheck/check]
+          requires: [test-env-subst, test-scripts, orb-tools/lint, orb-tools/pack, orb-tools/review, shellcheck/check]
           filters: *filters

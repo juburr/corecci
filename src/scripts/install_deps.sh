@@ -1,133 +1,71 @@
 #!/bin/bash
+#
+# Installs ssh and git with the image's package manager when either is
+# missing, as in Rocky Linux, UBI or Debian images. The package manager is the
+# first of apt-get, apk, dnf, microdnf and yum found, so any release of those
+# distributions works, RHEL 10 and UBI minimal images included.
 
 set -euo pipefail
-set +o history
-IFS=$'\n\t'
 
-# Log the installed versions
 log_versions() {
     ssh -V
     git --version
 }
 
-# Detects the Linux distribution
-detect_distro() {
-    if [ -f /etc/os-release ]; then
-        # shellcheck disable=SC1091
-        . /etc/os-release
-        case $ID in
-            ubuntu)
-                echo "ubuntu"
-                return
-                ;;
-            alpine)
-                echo "alpine"
-                return
-                ;;
-            ubi)
-                case $VERSION_ID in
-                    "7"*) echo "el7" ;;
-                    "8"*) echo "el8" ;;
-                    "9"*) echo "el9" ;;
-                esac
-                return
-                ;;
-            rhel|centos|rocky|*)
-                if [ -f /etc/redhat-release ]; then
-                    if grep -q "release 7" /etc/redhat-release; then
-                        echo "el7"
-                    elif grep -q "release 8" /etc/redhat-release; then
-                        echo "el8"
-                    elif grep -q "release 9" /etc/redhat-release; then
-                        echo "el9"
-                    fi
-                    return
-                fi
-                ;;
-        esac
+missing=()
+for tool in ssh git; do
+    if ! command -v "${tool}" > /dev/null 2>&1; then
+        missing+=("${tool}")
     fi
-    echo "unknown"
-}
-
-# Gets the package name for the given tool and distribution
-get_package_name() {
-    local tool=$1
-    local distro=$2
-
-    case $tool in
-        ssh)
-            case $distro in
-                ubuntu|alpine)
-                    echo "openssh-client"
-                    ;;
-                el*)
-                    echo "openssh-clients"
-                    ;;
-            esac
-            ;;
-        git)
-            echo "git"
-            ;;
-    esac
-}
-
-# Installs the given package on the given distribution
-install_package() {
-    local tool=$1
-    local distro=$2
-    local package
-
-    if command -v "${tool}" &>/dev/null; then
-        echo "${tool} is already installed."
-        return
-    fi
-
-    package=$(get_package_name "${tool}" "${distro}")
-
-    echo "Installing ${tool} via ${package} on ${distro}..."
-
-    case $distro in
-        ubuntu)
-            apt-get update && apt-get install -y "${package}"
-            ;;
-        alpine)
-            apk add --no-cache "${package}"
-            ;;
-        el7)
-            yum install -y "${package}"
-            ;;
-        el8|el9)
-            dnf install -y "${package}"
-            ;;
-        *)
-            echo "FATAL: Unable to install ${package} - unsupported distribution"
-            exit 1
-            ;;
-    esac
-}
-
-# Bail out early if dependencies are already installed
-if command -v git &>/dev/null && command -v ssh &>/dev/null; then
+done
+if [[ ${#missing[@]} -eq 0 ]]; then
     log_versions
     exit 0
 fi
+echo "Installing ${missing[*]}..."
 
-# If we need to install dependencies, we may need to be root
-if [ "$(id -u)" -ne 0 ]; then
-    echo "WARN: This script may not work as expected unless run as root."
-fi
-
-# Detect the Linux distribution
-LINUX_DISTRO=$(detect_distro)
-if [ "$LINUX_DISTRO" = "unknown" ]; then
-    echo "FATAL: Unable to detect Linux distribution; packages cannot be installed."
+manager=""
+for candidate in apt-get apk dnf microdnf yum; do
+    if command -v "${candidate}" > /dev/null 2>&1; then
+        manager=${candidate}
+        break
+    fi
+done
+if [[ -z "${manager}" ]]; then
+    echo "ERROR: ${missing[*]} must be installed, and no supported package manager (apt-get, apk, dnf, microdnf or yum) was found." >&2
     exit 1
 fi
-echo "Detected Linux distribution: ${LINUX_DISTRO}"
+if [[ "$(id -u)" -ne 0 ]]; then
+    echo "WARN: Not running as root, so ${manager} may not be able to install packages." >&2
+fi
 
-# Install dependencies
-install_package ssh "$LINUX_DISTRO"
-install_package git "$LINUX_DISTRO"
+packages=()
+for tool in "${missing[@]}"; do
+    case "${tool}:${manager}" in
+        ssh:apt-get | ssh:apk) packages+=(openssh-client) ;;
+        ssh:*) packages+=(openssh-clients) ;;
+        git:*) packages+=(git) ;;
+    esac
+done
 
-# Log the installed versions
+echo "Running ${manager} to install ${packages[*]}..."
+case "${manager}" in
+    apt-get)
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+        ;;
+    apk)
+        apk add --no-cache "${packages[@]}"
+        ;;
+    *)
+        "${manager}" install -y "${packages[@]}"
+        ;;
+esac
+
+for tool in "${missing[@]}"; do
+    if ! command -v "${tool}" > /dev/null 2>&1; then
+        echo "ERROR: ${manager} finished, but ${tool} is still not on the PATH." >&2
+        exit 1
+    fi
+done
 log_versions
